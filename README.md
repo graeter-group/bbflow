@@ -39,7 +39,7 @@ pip install -e .
 
 # Usage
 
-After Installing the bbflow package, you can generate ensemble states by three lines of code:
+After installing the bbflow package, you can generate ensemble states by three lines of code:
 
 ```python
 from bbflow.deployment.bbflow import BBFlow

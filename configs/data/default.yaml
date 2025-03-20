@@ -1,0 +1,42 @@
+dataset:
+  seed: 123
+  min_num_res: 0
+  max_num_res: 750
+  subset: null
+  split_path: ${experiment.checkpointer.dirpath}
+  train_csv_path: ./datasets/BBFlow/train/ATLAS_train.csv
+  valid_csv_paths: [
+    ./datasets/BBFlow/validation/ATLAS_valid.csv,
+  ]
+  valid_dataset_names: [
+    ATLAS_valid,
+  ]
+  
+  test_csv_path: ./datasets/BBFlow/test/ATLAS_test.csv
+  
+
+validation:
+  metrics_subset: ["RMSD", "RMSF", "RMWD", "PCA-W2", "Cosine Sim", "Weak Transient Contacts"]
+
+  # must contain a folder for each valid protein with the equilibrium pdb and xtc files
+  valid_xtc_paths: [
+    ./datasets/ATLAS/,
+  ]
+  # Folders with ensembles for the validation set proteins using AlphaFlow.
+  # Used in validation for plotting.
+  alphaflow_valid_pdb_paths: [null]
+  alphaflow_valid_rmsf_path: null
+
+  samples_per_valid_protein: 10 # per gpu
+  max_valid_batch_size: 100
+  max_valid_num_res_squared: 2_900_000
+
+
+loader:
+  num_workers: 8
+  prefetch_factor: 10
+
+sampler:
+  max_batch_size: 100
+  max_num_res_squared: 250_000
+  max_conformations: 20 # max_conformations per epoch. Chooses randomly from all conformations each epoch

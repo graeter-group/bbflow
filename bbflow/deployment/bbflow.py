@@ -1,0 +1,271 @@
+# Copyright (c) 2025 Max Planck Institute for Polymer Research
+# Licensed under the MIT license.
+
+import os
+import time
+import numpy as np
+import hydra
+import torch
+from torch.utils.data import DataLoader
+import GPUtil
+import subprocess
+from typing import Optional
+from biotite.sequence.io import fasta
+from pathlib import Path
+import pandas as pd
+from pytorch_lightning import Trainer
+from omegaconf import DictConfig, OmegaConf
+import logging
+from typing import Union
+from pathlib import Path
+from tqdm.auto import tqdm
+
+from gafl import experiment_utils as eu
+from gafl.data import utils as du
+from bbflow.analysis import utils as au
+from bbflow.deployment.utils import estimate_max_batchsize, recursive_update, ckpt_path_from_tag
+
+from bbflow.models.bbflow_module import BBFlowModule
+from bbflow.data.utils import frames_from_pdb
+
+
+log = eu.get_pylogger(__name__)
+torch.set_float32_matmul_precision('high')
+
+class BBFlow:
+
+    def __init__(self, ckpt_path: Union[Path,str], cfg:dict={}, timesteps:int=None, gamma_trans:float=None, gamma_rot:float=None, progress_bar:bool=True):
+        """
+        Arguments:
+        ckpt_path: Path or str. Path to checkpoint file. Must contain a 'config.yaml' file in the same directory.
+        cfg: dict. default:{}. Configuration dictionary. Will overwrite the configuration from the checkpoint for the entries given.
+        timesteps: int or None. default:None. Number of timesteps to sample. Overwrites the configuration from the checkpoint or in cfg.
+        gamma_trans: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
+        gamma_rot: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
+        progress_bar: bool. default:True. Whether to show a progress bar during sampling.
+        """
+        ckpt_dir = os.path.dirname(ckpt_path)
+        config_path = os.path.join(ckpt_dir, 'config.yaml')
+        if not os.path.exists(ckpt_path):
+            raise FileNotFoundError(f"Checkpoint file {ckpt_path} does not exist.")
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config file {os.path.join(ckpt_dir, 'config.yaml')} does not exist.")
+        
+        ckpt_cfg = OmegaConf.load(config_path)
+
+
+        # Set-up config.
+        if timesteps is not None:
+            cfg['inference']['timesteps'] = timesteps
+        if gamma_trans is not None:
+            cfg['inference']['gamma_trans'] = gamma_trans
+        if gamma_rot is not None:
+            cfg['inference']['gamma_rot'] = gamma_rot
+
+        default_inference_config = Path(__file__).parent.parent.parent / 'configs/inference.yaml'
+        cfg_ = OmegaConf.load(default_inference_config)
+        OmegaConf.set_struct(cfg_, True)
+
+        recursive_update(cfg, cfg_)
+
+        OmegaConf.set_struct(cfg_, False)
+
+        OmegaConf.set_struct(ckpt_cfg, False)
+        cfg = OmegaConf.merge(cfg_, ckpt_cfg)
+        cfg.experiment.checkpointer.dirpath = './'
+        
+        # do not overwrite but report differences:
+        # cfg.inference.interpolant.prior_conditional = ckpt_cfg.interpolant.prior_conditional
+        this_cond_dict = cfg.inference.interpolant.prior_conditional
+        ckpt_cond_dict = ckpt_cfg.interpolant.prior_conditional
+        for key in this_cond_dict.keys():
+            if key not in ckpt_cond_dict.keys():
+                log.warning(f"Key {key} not in checkpoint prior_conditional")
+            elif this_cond_dict[key] != ckpt_cond_dict[key]:
+                log.warning(f"{key} differs from training config: {this_cond_dict[key]} != {ckpt_cond_dict[key]}")
+
+        cfg.inference.interpolant.batch_ot = ckpt_cfg.interpolant.batch_ot
+
+        self._cfg = cfg
+        self._ckpt_cfg = ckpt_cfg
+        self._infer_cfg = cfg.inference
+        self._samples_cfg = self._infer_cfg.samples
+
+        self._progress_bar = progress_bar
+
+        # Read checkpoint and initialize module.
+        self._flow_module = self.load_module(ckpt_path)
+        self._flow_module.eval()
+        self._flow_module._infer_cfg = self._infer_cfg
+        self._flow_module._samples_cfg = self._samples_cfg
+
+    @classmethod
+    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=None, gamma_trans:float=None, gamma_rot:float=None, progress_bar:bool=True):
+        """
+        Arguments:
+        tag: str. Tag of the checkpoint to load. Searches the checkpoint at models/{tag}/*.ckpt. If not present, tries to download it.
+        cfg: dict. default:{}. Configuration dictionary. Will overwrite the configuration from the checkpoint for the entries given.
+        timesteps: int or None. default:None. Number of timesteps to sample. Overwrites the configuration from the checkpoint or in cfg.
+        gamma_trans: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
+        gamma_rot: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
+        progress_bar: bool. default:True. Whether to show a progress bar during sampling.
+        """
+        ckpt_path = ckpt_path_from_tag(tag)
+        return cls(ckpt_path, cfg=cfg, timesteps=timesteps, gamma_trans=gamma_trans, gamma_rot=gamma_rot, progress_bar=progress_bar)
+
+    def load_module(self, ckpt_path):
+        ckpt = torch.load(ckpt_path, map_location='cuda')
+        model_ckpt = ckpt["state_dict"]
+        model_ckpt = {k.replace('model.', ''): v for k, v in model_ckpt.items()}
+
+        module = BBFlowModule(self._cfg)
+        module.model.load_state_dict(model_ckpt)
+        return module
+    
+    def to(self, device: str):
+        self._flow_module.to(device)
+        self.device = device
+
+    def _sample_states(self, trans_eq:torch.Tensor, rotmats_eq:torch.Tensor, seq:torch.Tensor, n_samples:int=10, batch_size:int=None, device:str='cuda', cuda_memory_GB:int=40):
+        """
+        trans_equilibrium: torch.Tensor of shape (n_residues, 3)
+        rotmats_equilibrium: torch.Tensor of shape (n_residues, 3, 3)
+        seq: torch.Tensor of shape (n_residues, 21)
+        n_samples: int
+        batch_size: int or None. If not None, overrides the batch size estimation. Otherwise, the batch size is estimated based on the number of residues in the protein.
+        device: str. 'cpu' or 'cuda'.
+        cuda_memory_GB: int. Maximum amount of memory to use on the GPU. Used for estimating the batch size if batch_size is None.
+
+        Returns:
+        atom37_traj: np.array of shape (n_samples, n_residues, 37, 3)
+        """
+        num_res = trans_eq.shape[0]
+        if batch_size is None:
+            batch_size = estimate_max_batchsize(n_res=num_res, memory_GB=cuda_memory_GB)
+        B = batch_size
+
+        if device != 'cpu':
+            assert torch.cuda.is_available(), "CUDA is not available."
+
+        self._flow_module.to(device)
+        self._flow_module.interpolant.set_device(device)
+        trans_eq = trans_eq.to(device)
+        rotmats_eq = rotmats_eq.to(device)
+        seq = seq.to(device)
+
+        interpolant = self._flow_module.interpolant
+        batches = []
+        for i in range(n_samples // B):
+            batches.append(B)
+        if n_samples % B != 0:
+            batches.append(n_samples % B)
+
+        if self._progress_bar:
+            progress_bar = tqdm(total=n_samples, desc='Sampling states')
+
+        # sample states:
+        sampled_conformations = []
+        with torch.no_grad():
+            for b in batches:
+                atom37_traj, model_traj, _ = interpolant.sample(
+                    b,
+                    num_res,
+                    self._flow_module.model,
+                    trans_eq.repeat(b, 1, 1),
+                    rotmats_eq.repeat(b, 1, 1, 1),
+                    seq.repeat(b, 1, 1),
+                )
+                atom37_traj = du.to_numpy(torch.stack(atom37_traj, dim=1))
+                for i in range(b):
+                    sampled_conformations.append(atom37_traj[i][-1])
+
+                if self._progress_bar:
+                    progress_bar.update(b)
+        
+        # (num_samples, num_residues, 37, 3)
+        sampled_conformations = np.stack(sampled_conformations, axis=0)
+
+        return sampled_conformations
+
+
+
+    def sample(
+            self,
+            input_path:Union[Path,str],
+            n_samples:int=10,
+            output_path:Union[Path,str]=None,
+            device:str='cuda',
+            cuda_memory_GB:int=40,
+            batch_size:int=None,
+            output_dir:Optional[Union[Path,str]]=None,
+            output_fmt:str='pdb',
+            overwrite:bool=True
+        ):
+        """
+        Loads a PDB file describing the equilibrium structure of a protein and samples n_samples conformations. Stores the sampled backbone conformations in a PDB file and returns them as array of shape (n_samples, n_residues, 37, 3).
+
+        Arguments:
+        input_path: Path or str. Path to PDB file.
+        n_samples: int. Number of conformations to sample.
+        output_path: Path or str. Path to output PDB file. If None, the sampled conformations are not stored.
+        device: str. 'cpu' or 'cuda'.
+        cuda_memory_GB: int. Maximum amount of memory to use on the GPU. Used for estimating the batch size if batch_size is None.
+        batch_size: int. Batch size for sampling. If None, the batch size is estimated based on the number of residues in the protein.
+        output_dir: Path or str. Path to output directory, in which the pdb file with the sampled conformations will be stored as 'sampled_conformations.pdb' if no output_path is given.
+        output_fmt: str. 'pdb' or 'xtc'. Format of the output file if output_dir is given.
+        overwrite: bool. If True, overwrites the output file if it already exists.
+        """
+
+        # some checks:
+        assert input_path is not None, "Input path must be given."
+        if not str(input_path).endswith('.pdb'):
+            raise ValueError(f"Input path must be a PDB file but got {input_path}.")
+        
+        if output_path is None and output_dir is None:
+            raise ValueError("Either output_path or output_dir must be given.")
+        
+        if output_path is not None and output_dir is not None:
+            raise ValueError("Only one of output_path or output_dir must be given.")
+
+        # infer output path:
+        if output_dir is not None:
+            output_path = Path(output_dir) / f'sampled_conformations.{output_fmt}'
+
+        output_path = Path(output_path)
+        
+        # print warning if the suffix of the given output path does not match the output format:
+        if output_fmt != Path(output_path).suffix[1:]:
+            log.warning(f"Output format {output_fmt} does not match the suffix of the given output path {output_path}.")
+
+        if output_path.exists():
+            if overwrite:
+                logging.warning(f"Output path {output_path} already exists and will be overwritten.")
+            else:    
+                raise ValueError(f"Output path {output_path} already exists.")
+
+        # Load trans/rotmats from PDB
+        trans_eq, rotmats_eq, seq = frames_from_pdb(input_path)
+
+        # Sample states
+        sampled_conformations = self._sample_states(
+            trans_eq=trans_eq,
+            rotmats_eq=rotmats_eq,
+            seq=seq,
+            n_samples=n_samples,
+            batch_size=batch_size,
+            device=device,
+            cuda_memory_GB=cuda_memory_GB
+        )
+
+        if str(output_path).endswith('.xtc'):
+            raise NotImplementedError("XTC output format is not implemented yet.")
+        else:
+
+            logging.info(f"Writing sampled conformations to {output_path}")
+
+            au.write_prot_to_pdb(
+                sampled_conformations,
+                str(output_path),
+                aatype=seq.argmax(-1).numpy(),
+                no_indexing=True
+            )

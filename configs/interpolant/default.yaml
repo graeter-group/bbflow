@@ -1,0 +1,27 @@
+
+use_tqdm: ${experiment.use_tqdm}
+batch_ot: "intra" # "inter" (only for pure_noise prior), "intra", "none"
+
+prior: "conditional" # "conditional", "pure_noise"
+prior_conditional:
+  gamma_trans: 0.2
+  gamma_rots: 0.2
+
+min_t: 1e-2
+t_interval: [0.0, 1.0] # Determines the range of t values to sample from during training
+rots:
+  distribution: uniform
+  train_schedule: linear
+  sample_schedule: exp
+  exp_rate: 10
+  linear_scaling: 1
+trans:
+  train_schedule: linear
+  sample_schedule: linear
+sampling:
+  num_timesteps: 100
+self_condition: ${model.edge_features.self_condition}
+noise_res_scaling_power: 0.0
+noise_scale: 1.
+
+t_sampling_focus: 0.0

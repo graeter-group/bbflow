@@ -1,5 +1,42 @@
-# BBFlow
+# Learning conformational ensembles of proteins with BBFlow
 
-Conformational ensemble generation of protein backbones with flow matching.
+Structure-based conformational ensemble prediction with flow matching. The method is described in the paper [Learning conformational ensembles of proteins based on backbone geometry](https://arxiv.org/abs/2503.05738).
 
-We will release the code in a few days. Stay tuned for updates!
+```
+@article{wolf2025conformational,
+      title={Learning conformational ensembles of proteins based on backbone geometry}, 
+      author={Nicolas Wolf and Leif Seute and Vsevolod Viliuga and Simon Wagner and Jan Stühmer and Frauke Gräter},
+      year={2025},
+      eprint={2503.05738},
+      archivePrefix={arXiv},
+      journal={arXiv preprint arXiv:2503.05738},
+}
+```
+
+Please cite the paper if you use the code.
+
+
+This repository relies on the [GAFL](https://github.com/hits-mli/gafl) package and code from [FrameFlow](https://github.com/microsoft/protein-frame-flow).
+
+
+# Installation
+
+BBFlow relies on the [GAFL](https://github.com/hits-mli/gafl) package, which can be installed from GitHub as shown below. The dependencies besides GAFL are listed in `environment.yaml`.
+
+```bash
+# create env with dependencies:
+conda env create -f environment.yaml
+conda activate bbflow
+# install gafl:
+git clone git@github.com:hits-mli/gafl.git ../gafl
+pushd ../gafl
+bash install_gatr.sh # Apply patches to gatr (needed for gafl)
+pip install -e .
+# install bbflow:
+popd
+pip install -e .
+```
+
+# Usage
+
+See the example script in `scripts/inference_example.py`.

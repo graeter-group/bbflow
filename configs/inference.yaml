@@ -1,0 +1,60 @@
+defaults:
+  - data: default
+  - experiment: default
+  - interpolant: default
+  - model: default
+  - _self_
+
+hydra:
+  run:
+    dir: outputs/hydra/
+
+inference:
+  # Use this to write with date-time stamp.
+  name: run_${now:%Y-%m-%d}_${now:%H-%M}
+  seed: 123
+  ckpt_path: outputs/ckpt/frameflow/published.ckpt
+  output_dir: outputs/inference/
+  use_ckpt_name_in_outpath: True
+
+  use_gpu: True
+  num_gpus: 1
+
+  use_tqdm: True
+  log_times: True
+
+  csv_path: null
+  sort: False
+
+  save_traj: False
+  single_file: True
+
+  interpolant:
+    use_tqdm: ${inference.use_tqdm}
+    min_t: 0.01
+    max_t: 0.99
+    rots:
+      distribution: uniform # uniform, igso3
+      corrupt: True
+      sample_schedule: exp
+      exp_rate: 10
+    trans:
+      corrupt: True
+      sample_schedule: linear
+    sampling:
+      num_timesteps: 100
+    self_condition: True
+
+    prior: "conditional" # "conditional", "pure_noise"
+    prior_conditional:
+      gamma_trans: 0.2
+      gamma_rots: 0.2
+
+
+  samples:
+
+    samples_per_protein: 25
+
+    batch_size: 10
+
+    num_res_squared: 2_900_000

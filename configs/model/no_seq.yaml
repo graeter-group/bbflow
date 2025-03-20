@@ -1,0 +1,6 @@
+defaults:
+  - default
+  - _self_
+
+node_features:
+  embed_aatype: True

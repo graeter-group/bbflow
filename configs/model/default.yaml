@@ -1,0 +1,46 @@
+
+node_embed_size: 240
+edge_embed_size: 120
+
+embed:
+  index_embed_dim: 128
+  time_embed_dim: 128
+  embed_aatype: True
+  aatype_embed_dim: 128
+  length_embed_dim: 16
+  embed_self_conditioning: True
+  num_bins_distance: 22
+  min_bin_distance: 1e-5
+  max_bin_distance: 20.0
+  embed_distogram: True
+  embed_direction: False
+
+node_features:
+  c_s: ${model.node_embed_size}
+  c_pos_emb: 120
+  c_timestep_emb: 120
+  embed_diffuse_mask: False
+  max_num_res: 2000
+  timestep_int: 1000
+
+edge_features:
+  single_bias_transition_n: 2
+  c_s: ${model.node_embed_size}
+  c_p: ${model.edge_embed_size}
+  relpos_k: 64
+  use_rbf: True
+  num_rbf: 32
+  feat_dim: 64
+  num_bins: 22
+  self_condition: True
+
+gfa:
+  c_s: ${model.node_embed_size}
+  c_z: ${model.edge_embed_size}
+  c_hidden: 120
+  no_heads: 8
+  no_qk_points: 8
+  no_v_points: 8
+  seq_tfmr_num_heads: 4
+  seq_tfmr_num_layers: 2
+  num_blocks: 6

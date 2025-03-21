@@ -20,7 +20,6 @@ dataset/
 
 *.png
 
-*.png
 
 job.sh
 
@@ -102,7 +101,9 @@ instance/
 .scrapy
 
 # downloaded models:
-models/
+models/*/*.yaml
+models/*/*.ckpt
+
 
 # Sphinx documentation
 docs/_build/

@@ -39,4 +39,12 @@ pip install -e .
 
 # Usage
 
-See the example script in `scripts/inference_example.py`.
+After installing the bbflow package, you can generate ensemble states by three lines of code:
+
+```python
+from bbflow.deployment.bbflow import BBFlow
+bbflow_sampler = BBFlow.from_tag('latest')
+bbflow_sampler.sample(input_path='<path/to/equilibrium.pdb>', output_path='<path/to/output_ensemble.pdb>', n_samples=50)
+```
+
+For more details, see the example script in `scripts/inference_example.py`.

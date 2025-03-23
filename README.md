@@ -24,6 +24,9 @@ This repository relies on the [GAFL](https://github.com/hits-mli/gafl) package a
 BBFlow relies on the [GAFL](https://github.com/hits-mli/gafl) package, which can be installed from GitHub as shown below. The dependencies besides GAFL are listed in `environment.yaml`.
 
 ```bash
+# download bbflow:
+git clone git@github.com:graeter-group/bbflow.git
+cd bbflow
 # create env with dependencies:
 conda env create -f environment.yaml
 conda activate bbflow

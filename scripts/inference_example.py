@@ -4,9 +4,8 @@ from pathlib import Path
 
 rootdir = Path(__file__).parent.parent
 
-# Download the latest model into ./models/"latest", 
-# where "latest" is "bbflow-0.1" currently
-bbflow_sampler = BBFlow.from_tag('latest')
+# Download a small test model into ./models/bbflow-mini-0.1, 
+bbflow_sampler = BBFlow.from_tag('bbflow-mini-0.1') # use 'latest' to download a heavier, more accurate model
 
 # Alternatively, you can specify a ckpt path directly
 # ckpt_path = './ckpt/bbflow.ckpt'
@@ -22,7 +21,7 @@ pdb_path = rootdir/'test_data/test_pdbs/equilibrium.pdb'
 # with a fixed batch size of 10
 bbflow_sampler.sample(
     input_path=pdb_path, output_dir=rootdir/'test_data/test_pdbs', 
-    n_samples=50, batch_size=10
+    num_samples=50, batch_size=10
 )
 
 #%%
@@ -30,7 +29,7 @@ bbflow_sampler.sample(
 # with a fixed batch size of 10
 bbflow_sampler.sample(
     input_path=pdb_path, output_path=rootdir/'test_data/test_pdbs/ensemble.pdb', 
-    n_samples=50, batch_size=10
+    num_samples=50, batch_size=10
 )
 
 #%%
@@ -38,7 +37,7 @@ bbflow_sampler.sample(
 # the batch size is estimated based on the VRAM of the GPU
 bbflow_sampler.sample(
     input_path=pdb_path, output_path=rootdir/'test_data/test_pdbs/ensemble.pdb', 
-    n_samples=50, cuda_memory_GB=6
+    num_samples=50, cuda_memory_GB=6
 )
 
 

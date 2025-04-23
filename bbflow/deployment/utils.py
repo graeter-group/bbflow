@@ -4,16 +4,21 @@
 import numpy as np
 from pathlib import Path
 from typing import Union
+import logging
 import requests
 from tqdm.auto import tqdm
 
 
-LATEST_TAG = 'bbflow-0.1'
+LATEST_TAG = 'bbflow-multimer-0.1'
 CKPT_URLS = {
     'bbflow-0.1': 'https://keeper.mpdl.mpg.de/f/bee3c06a20b94ee2ac92/?dl=1',
+    'bbflow-mini-0.1': 'https://keeper.mpdl.mpg.de/f/6468bf14741241ada585/?dl=1',
+    'bbflow-multimer-0.1': 'https://keeper.mpdl.mpg.de/f/5f34210827e44bbabea3/?dl=1',
 }
 CONFIG_URLS = {
     'bbflow-0.1': 'https://keeper.mpdl.mpg.de/f/7ed49e41d7c444569a11/?dl=1',
+    'bbflow-mini-0.1': 'https://keeper.mpdl.mpg.de/f/f45f13e93d564d29a605/?dl=1',
+    'bbflow-multimer-0.1': 'https://keeper.mpdl.mpg.de/f/2c66f84f39b640faab38/?dl=1',
 }
 
 
@@ -61,7 +66,9 @@ def ckpt_path_from_tag(tag:str='latest'):
     root_dir = get_root_dir()
     ckpt_dir = root_dir / 'models' / tag
 
-    if not ckpt_dir.exists():
+    if not (ckpt_dir/'config.yaml').exists():
+        logging.info(f"Config file not found in {ckpt_dir}. Downloading the model with tag {tag}...")
+
         if not tag in CKPT_URLS.keys():
             raise FileNotFoundError(f"Checkpoint directory {ckpt_dir} not found and {tag} not found in the hard-coded URLs for downloading.")
         else:
@@ -84,8 +91,13 @@ def ckpt_path_from_tag(tag:str='latest'):
 
 def _download_file(url:str, target_path:Path, progress_bar:bool=True):
     # Start the download
-    response = requests.get(url, stream=True)
+    headers = {'User-Agent': 'Wget/1.21'}
+    response = requests.get(url, stream=True, headers=headers)
     response.raise_for_status()  # Ensure the request was successful
+
+    if 'text/html' in response.headers.get('Content-Type', '') and b'Link does not exist' in response.content:
+        raise ValueError(f"Invalid or expired link: {url}")
+
 
     if progress_bar:
         # Get the total file size from headers
@@ -115,6 +127,9 @@ def download_model(tag:str='latest'):
     root_dir = get_root_dir()
     ckpt_dir = root_dir / 'models' / tag
     ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    if not tag in CKPT_URLS.keys():
+        raise FileNotFoundError(f"Tag {tag} not recognized. Possible tags: {list(CKPT_URLS.keys())}.")
 
     ckpt_url = CKPT_URLS[tag]
     config_url = CONFIG_URLS[tag]

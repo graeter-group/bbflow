@@ -209,7 +209,7 @@ class PDBDatasetBBFlow(Dataset):
             name = row["name"]
             protein_folder = row["folder"]
 
-            trans, rotmats, seq_onehot = frames_from_pdb(
+            trans, rotmats, seq_onehot, _ = frames_from_pdb(
                 os.path.join(protein_folder, f"{name}.pdb")
             )
             seq = np.array([restypes[i] for i in seq_onehot.argmax(1)])
@@ -286,7 +286,7 @@ class PDBDatasetBBFlowFromPdb(Dataset):
             pdb_path = row['pdb_path']
             pdb_name = row['pdb_name']
 
-            trans, rotmats, seq_onehot = frames_from_pdb(pdb_path)
+            trans, rotmats, seq_onehot, _ = frames_from_pdb(pdb_path)
 
             self.trans.append(trans)
             self.rotmats.append(rotmats)

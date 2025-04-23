@@ -110,8 +110,15 @@ class Embedder(nn.Module):
             edge_dim_in += 3
 
         # positional encoding
-        node_dim_in += model_conf.embed.index_embed_dim
-        edge_dim_in += model_conf.embed.index_embed_dim
+        if model_conf.embed.index_embed_dim > 0:
+            self.index_embed_dim = model_conf.embed.index_embed_dim
+            node_dim_in += self.index_embed_dim
+            edge_dim_in += self.index_embed_dim
+            self.linear_relpos = nn.Linear(
+                self.index_embed_dim, self.index_embed_dim
+            )
+        else:
+            self.index_embed_dim = 0
 
 
         if self.embed_aatype:
@@ -120,10 +127,6 @@ class Embedder(nn.Module):
 
 
         self.linear_s_p = nn.Linear(model_conf.node_embed_size, model_conf.node_embed_size)
-        self.linear_relpos = nn.Linear(
-            self.model_conf.embed.index_embed_dim, 
-            self.model_conf.embed.index_embed_dim
-        )
 
         self.node_embedding = MLP(node_dim_in, model_conf.node_embed_size, num_layers=2)
         self.edge_embedding = MLP(edge_dim_in, model_conf.edge_embed_size, num_layers=2)
@@ -201,12 +204,12 @@ class Embedder(nn.Module):
         length_embedding = length_embedding.repeat([B, 1, 1])
         h_0.append(length_embedding)
 
-
-        seq_idx = torch.arange(N).repeat(B, 1).to(device=device)
-        h_0.append(self.index_embedder(seq_idx))
-        rel_seq_offset = seq_idx[:, :, None] - seq_idx[:, None, :]
-        rel_seq_offset = rel_seq_offset.reshape([B, N**2])
-        z_0.append(self.linear_relpos(self.index_embedder(rel_seq_offset)))
+        if self.index_embed_dim > 0:
+            seq_idx = torch.arange(N).repeat(B, 1).to(device=device)
+            h_0.append(self.index_embedder(seq_idx))
+            rel_seq_offset = seq_idx[:, :, None] - seq_idx[:, None, :]
+            rel_seq_offset = rel_seq_offset.reshape([B, N**2])
+            z_0.append(self.linear_relpos(self.index_embedder(rel_seq_offset)))
         
 
         h_0 = torch.cat(h_0, dim=-1)

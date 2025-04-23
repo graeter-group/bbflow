@@ -15,10 +15,16 @@ from pathlib import Path
 import pandas as pd
 from pytorch_lightning import Trainer
 from omegaconf import DictConfig, OmegaConf
+from omegaconf.base import ContainerMetadata
+import warnings
 import logging
 from typing import Union
 from pathlib import Path
 from tqdm.auto import tqdm
+
+# depending on the torch version (higher than 2.x), we need to add the DictConfig and ContainerMetadata to the safe globals:
+if hasattr(torch.serialization, 'add_safe_globals'):
+    torch.serialization.add_safe_globals([DictConfig, ContainerMetadata]) # needed for loading the checkpoint with weights_only=True
 
 from gafl import experiment_utils as eu
 from gafl.data import utils as du
@@ -29,19 +35,20 @@ from bbflow.models.bbflow_module import BBFlowModule
 from bbflow.data.utils import frames_from_pdb
 
 
+
 log = eu.get_pylogger(__name__)
 torch.set_float32_matmul_precision('high')
 
 class BBFlow:
 
-    def __init__(self, ckpt_path: Union[Path,str], cfg:dict={}, timesteps:int=None, gamma_trans:float=None, gamma_rot:float=None, progress_bar:bool=True):
+    def __init__(self, ckpt_path: Union[Path,str], cfg:dict={}, timesteps:int=20, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}):
         """
         Arguments:
         ckpt_path: Path or str. Path to checkpoint file. Must contain a 'config.yaml' file in the same directory.
         cfg: dict. default:{}. Configuration dictionary. Will overwrite the configuration from the checkpoint for the entries given.
-        timesteps: int or None. default:None. Number of timesteps to sample. Overwrites the configuration from the checkpoint or in cfg.
+        timesteps: int or None. default:20. Number of timesteps to sample. Overwrites the configuration from the checkpoint or in cfg.
         gamma_trans: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
-        gamma_rot: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
+        gamma_rots: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
         progress_bar: bool. default:True. Whether to show a progress bar during sampling.
         """
         ckpt_dir = os.path.dirname(ckpt_path)
@@ -53,14 +60,15 @@ class BBFlow:
         
         ckpt_cfg = OmegaConf.load(config_path)
 
+        self._pbar_kwargs = _pbar_kwargs
+
 
         # Set-up config.
         if timesteps is not None:
+            assert isinstance(timesteps, int), "timesteps must be an integer."
+            if not 'inference' in cfg:
+                cfg['inference'] = {}
             cfg['inference']['timesteps'] = timesteps
-        if gamma_trans is not None:
-            cfg['inference']['gamma_trans'] = gamma_trans
-        if gamma_rot is not None:
-            cfg['inference']['gamma_rot'] = gamma_rot
 
         default_inference_config = Path(__file__).parent.parent.parent / 'configs/inference.yaml'
         cfg_ = OmegaConf.load(default_inference_config)
@@ -73,18 +81,16 @@ class BBFlow:
         OmegaConf.set_struct(ckpt_cfg, False)
         cfg = OmegaConf.merge(cfg_, ckpt_cfg)
         cfg.experiment.checkpointer.dirpath = './'
-        
-        # do not overwrite but report differences:
-        # cfg.inference.interpolant.prior_conditional = ckpt_cfg.interpolant.prior_conditional
-        this_cond_dict = cfg.inference.interpolant.prior_conditional
-        ckpt_cond_dict = ckpt_cfg.interpolant.prior_conditional
-        for key in this_cond_dict.keys():
-            if key not in ckpt_cond_dict.keys():
-                log.warning(f"Key {key} not in checkpoint prior_conditional")
-            elif this_cond_dict[key] != ckpt_cond_dict[key]:
-                log.warning(f"{key} differs from training config: {this_cond_dict[key]} != {ckpt_cond_dict[key]}")
 
         cfg.inference.interpolant.batch_ot = ckpt_cfg.interpolant.batch_ot
+        
+        if gamma_rots is None:
+            gamma_rots = ckpt_cfg.interpolant.prior_conditional.gamma_rots
+        if gamma_trans is None:
+            gamma_trans = ckpt_cfg.interpolant.prior_conditional.gamma_trans
+            
+        cfg.inference.interpolant.prior_conditional.gamma_rots = gamma_rots
+        cfg.inference.interpolant.prior_conditional.gamma_trans = gamma_trans
 
         self._cfg = cfg
         self._ckpt_cfg = ckpt_cfg
@@ -100,21 +106,21 @@ class BBFlow:
         self._flow_module._samples_cfg = self._samples_cfg
 
     @classmethod
-    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=None, gamma_trans:float=None, gamma_rot:float=None, progress_bar:bool=True):
+    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=None, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}):
         """
         Arguments:
         tag: str. Tag of the checkpoint to load. Searches the checkpoint at models/{tag}/*.ckpt. If not present, tries to download it.
         cfg: dict. default:{}. Configuration dictionary. Will overwrite the configuration from the checkpoint for the entries given.
         timesteps: int or None. default:None. Number of timesteps to sample. Overwrites the configuration from the checkpoint or in cfg.
         gamma_trans: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
-        gamma_rot: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
+        gamma_rots: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
         progress_bar: bool. default:True. Whether to show a progress bar during sampling.
         """
         ckpt_path = ckpt_path_from_tag(tag)
-        return cls(ckpt_path, cfg=cfg, timesteps=timesteps, gamma_trans=gamma_trans, gamma_rot=gamma_rot, progress_bar=progress_bar)
+        return cls(ckpt_path, cfg=cfg, timesteps=timesteps, gamma_trans=gamma_trans, gamma_rots=gamma_rots, progress_bar=progress_bar, _pbar_kwargs=_pbar_kwargs)
 
     def load_module(self, ckpt_path):
-        ckpt = torch.load(ckpt_path, map_location='cuda')
+        ckpt = torch.load(ckpt_path, map_location='cuda', weights_only=True)
         model_ckpt = ckpt["state_dict"]
         model_ckpt = {k.replace('model.', ''): v for k, v in model_ckpt.items()}
 
@@ -161,7 +167,7 @@ class BBFlow:
             batches.append(n_samples % B)
 
         if self._progress_bar:
-            progress_bar = tqdm(total=n_samples, desc='Sampling states')
+            progress_bar = tqdm(total=n_samples, desc='Sampling states', dynamic_ncols=True, **self._pbar_kwargs)
 
         # sample states:
         sampled_conformations = []
@@ -192,7 +198,7 @@ class BBFlow:
     def sample(
             self,
             input_path:Union[Path,str],
-            n_samples:int=10,
+            num_samples:int=10,
             output_path:Union[Path,str]=None,
             device:str='cuda',
             cuda_memory_GB:int=40,
@@ -202,11 +208,11 @@ class BBFlow:
             overwrite:bool=True
         ):
         """
-        Loads a PDB file describing the equilibrium structure of a protein and samples n_samples conformations. Stores the sampled backbone conformations in a PDB file and returns them as array of shape (n_samples, n_residues, 37, 3).
+        Loads a PDB file describing the equilibrium structure of a protein and samples num_samples conformations. Stores the sampled backbone conformations in a PDB file and returns them as array of shape (num_samples, n_residues, 37, 3).
 
         Arguments:
         input_path: Path or str. Path to PDB file.
-        n_samples: int. Number of conformations to sample.
+        num_samples: int. Number of conformations to sample.
         output_path: Path or str. Path to output PDB file. If None, the sampled conformations are not stored.
         device: str. 'cpu' or 'cuda'.
         cuda_memory_GB: int. Maximum amount of memory to use on the GPU. Used for estimating the batch size if batch_size is None.
@@ -239,19 +245,19 @@ class BBFlow:
 
         if output_path.exists():
             if overwrite:
-                logging.warning(f"Output path {output_path} already exists and will be overwritten.")
+                warnings.warn(f"An output path already exists and will be overwritten.")
             else:    
                 raise ValueError(f"Output path {output_path} already exists.")
 
         # Load trans/rotmats from PDB
-        trans_eq, rotmats_eq, seq = frames_from_pdb(input_path)
+        trans_eq, rotmats_eq, seq, chain_ids = frames_from_pdb(input_path)
 
         # Sample states
         sampled_conformations = self._sample_states(
             trans_eq=trans_eq,
             rotmats_eq=rotmats_eq,
             seq=seq,
-            n_samples=n_samples,
+            n_samples=num_samples,
             batch_size=batch_size,
             device=device,
             cuda_memory_GB=cuda_memory_GB
@@ -267,5 +273,6 @@ class BBFlow:
                 sampled_conformations,
                 str(output_path),
                 aatype=seq.argmax(-1).numpy(),
-                no_indexing=True
+                no_indexing=True,
+                chain_index=chain_ids
             )

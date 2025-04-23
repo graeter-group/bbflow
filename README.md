@@ -24,11 +24,15 @@ This repository relies on the [GAFL](https://github.com/hits-mli/gafl) package a
 BBFlow relies on the [GAFL](https://github.com/hits-mli/gafl) package, which can be installed from GitHub as shown below. The dependencies besides GAFL are listed in `environment.yaml`.
 
 ```bash
+# download bbflow:
+git clone https://github.com/graeter-group/bbflow.git
+cd bbflow
 # create env with dependencies:
 conda env create -f environment.yaml
 conda activate bbflow
+pip install pip==23.2.1 #pip < 1.24 is required for the pytorch-lightning version.
 # install gafl:
-git clone git@github.com:hits-mli/gafl.git ../gafl
+git clone https://github.com/hits-mli/gafl.git ../gafl
 pushd ../gafl
 bash install_gatr.sh # Apply patches to gatr (needed for gafl)
 pip install -e .
@@ -44,7 +48,13 @@ After installing the bbflow package, you can generate ensemble states by three l
 ```python
 from bbflow.deployment.bbflow import BBFlow
 bbflow_sampler = BBFlow.from_tag('latest')
-bbflow_sampler.sample(input_path='<path/to/equilibrium.pdb>', output_path='<path/to/output_ensemble.pdb>', n_samples=50)
+bbflow_sampler.sample(input_path='<path/to/equilibrium.pdb>', output_path='<path/to/output_ensemble.pdb>', num_samples=50)
 ```
 
-For more details, see the example script in `scripts/inference_example.py`.
+or by using the command line interface:
+
+```bash
+bbflow_sample --input_path <path/to/equilibrium.pdb> --output_path <path/to/output_ensemble.pdb> --num_samples 50
+```
+
+For more details, see the example scripts at `scripts/inference_example.py` and `scripts/cmd_inference_example.sh`.

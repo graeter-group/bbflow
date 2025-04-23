@@ -19,7 +19,7 @@ datasets/
 dataset/
 
 *.png
-
+!requirements.txt
 
 job.sh
 
@@ -27,6 +27,7 @@ slurm_logs/*
 *.csv
 
 !scripts/test_pdbs/equilibrium.pdb
+!scripts/test_pdbs/short_equilibrium.pdb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

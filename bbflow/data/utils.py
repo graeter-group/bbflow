@@ -58,8 +58,10 @@ def frames_from_pdb(pdb_path:Path)->Tuple[torch.Tensor, torch.Tensor, torch.Tens
     N_atoms = eq.xyz[0, eq.top.select('name N'), :] * 10
     CA_atoms = eq.xyz[0, eq.top.select('name CA'), :] * 10
     C_atoms = eq.xyz[0, eq.top.select('name C'), :] * 10
-    seq = np.array(list(eq.top.to_fasta()[0]))
+    seq = np.array(list("".join(eq.top.to_fasta())))
+
+    chain_ids = np.array([res.chain.index for res in eq.top.residues])
 
     data = backbone_to_frames(N_atoms, CA_atoms, C_atoms, seq)
-    return data["trans"], data["rotmats"], data["seq_onehot"]
+    return data["trans"], data["rotmats"], data["seq_onehot"], chain_ids
 

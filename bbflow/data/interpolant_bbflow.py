@@ -280,11 +280,5 @@ class InterpolantBBFlow(Interpolant):
         atom37_traj = all_atom.transrot_to_atom37(prot_traj, res_mask)
         clean_atom37_traj = all_atom.transrot_to_atom37(clean_traj, res_mask)
 
-        # remove the c betas. they are not predicted by the network but rule based and have no real meaning
-        # Masking CB atoms
-        # atom37 bb order = ['N', 'CA', 'C', 'CB', 'O']
-        atom37_traj[..., 3, :] = 0
-        clean_atom37_traj[..., 3, :] = 0
-
         return atom37_traj, clean_atom37_traj, clean_traj
     

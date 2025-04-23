@@ -182,6 +182,12 @@ class BBFlow:
                     seq.repeat(b, 1, 1),
                 )
                 atom37_traj = du.to_numpy(torch.stack(atom37_traj, dim=1))
+                
+                # remove the c betas. they are not predicted by the network but rule based and have no real meaning
+                # Masking CB atoms
+                # atom37 bb order = ['N', 'CA', 'C', 'CB', 'O']
+                atom37_traj[..., 3, :] = 0
+
                 for i in range(b):
                     sampled_conformations.append(atom37_traj[i][-1])
 

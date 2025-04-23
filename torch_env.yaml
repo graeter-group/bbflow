@@ -1,0 +1,8 @@
+name: gafl-minimal
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.10.12
+  - pytorch
+  - pip=23.2.1=pyhd8ed1ab_0

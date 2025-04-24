@@ -21,25 +21,92 @@ This repository relies on the [GAFL](https://github.com/hits-mli/gafl) package a
 
 # Installation
 
-BBFlow relies on the [GAFL](https://github.com/hits-mli/gafl) package, which can be installed from GitHub as shown below. The dependencies besides GAFL are listed in `environment.yaml`.
+## TLDR
+
+You can use our install script, which esssentially executes the steps specified below:
+
+```bash
+git clone https://github.com/graeter-group/bbflow.git
+conda create -n bbflow python=3.10 pip=23.2.1 -y
+conda activate bbflow && bash bbflow/install_utils/install.sh
+```
+
+Verify your installation by running our example script:
+
+```bash
+bash bbflow/scripts/inference_example.sh
+```
+
+## pip
+
+Optional: Create a virtual environment, e.g. with conda and install pip23.2.1:
+
+```bash
+conda create -n bbflow python=3.10 pip=23.2.1 -y
+conda activate bbflow
+```
+
+Install the dependencies from the requirements file:
+
+```bash
+git clone https://github.com/graeter-group/bbflow.git
+pip install -r bbflow/install_utils/requirements.txt
+
+# BBFlow builds on top of the GAFL package, which is installed from source:
+git clone https://github.com/hits-mli/gafl.git
+cd gafl
+bash install_gatr.sh # Apply patches to gatr (needed for gafl)
+pip install -e . # Install GAFL
+cd ..
+
+# Finally, install bbflow with pip:
+cd bbflow
+pip install -e .
+```
+
+Install torch with a suitable cuda version, e.g.
+
+```bash
+pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+pip install torch-scatter -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
+```
+
+where you can replace cu124 by your cuda version, e.g. cu118 or cu121.
+
+## conda
+
+BBFlow relies on the [GAFL](https://github.com/hits-mli/gafl) package, which can be installed from GitHub as shown below. The dependencies besides GAFL are listed in `install_utils/environment.yaml`, we also provide a minimal environment in `install_utils/minimal_env.yaml`, where it is easier to change torch/cuda versions.
 
 ```bash
 # download bbflow:
 git clone https://github.com/graeter-group/bbflow.git
-cd bbflow
 # create env with dependencies:
-conda env create -f environment.yaml
+conda env create -f bbflow/install_utils/environment.yaml
 conda activate bbflow
-pip install pip==23.2.1 #pip < 1.24 is required for the pytorch-lightning version.
+
 # install gafl:
-git clone https://github.com/hits-mli/gafl.git ../gafl
-pushd ../gafl
+git clone https://github.com/hits-mli/gafl.git
+cd gafl
 bash install_gatr.sh # Apply patches to gatr (needed for gafl)
 pip install -e .
+cd ..
+
 # install bbflow:
-popd
 pip install -e .
 ```
+
+## Common installation issues
+
+If you encounter problems with the cuda version, you can also install the requirements from a minimal conda enviroment, modified to contain your torch and cuda version of choice:
+
+```bash
+# ...
+conda env create -f bbflow/install_utils/minimal_env.yaml
+conda activate bbflow
+# ...
+```
+
+Problems with torch_scatter can usually be resolved by uninstalling and re-installing it via pip for the correct torch and cuda version, e.g. `pip install torch-scatter -f https://data.pyg.org/whl/torch-2.0.0+cu124.html` for torch 2.0.0 and cuda 12.4.
 
 # Usage
 

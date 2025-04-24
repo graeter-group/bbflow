@@ -207,12 +207,12 @@ def _check_arg_validity(args):
     # Check if input_path and output_path are given
     if args.input_path is not None:
         assert args.output_path is not None, "If input_path is given, output_path must also be given."
-        assert len(args.input_path) == len(args.output_path), "If input_path is given, output_path must also be given and contain the same number of paths."
+        assert len(args.input_path) == len(args.output_path), f"If input_path is given, output_path must also be given and contain the same number of paths, {len(args.input_path)} != {len(args.output_path)}."
         # check that all paths exist:
         for path in args.input_path:
             assert Path(path).exists(), f"Input path {path} does not exist."
-            # check that all paths are .pdb or .xtc
-            assert Path(path).suffix == '.pdb'
+            # check that all paths are .pdb
+            assert Path(path).suffix == '.pdb', f"Found input path {path}. It must have .pdb ending."
 
         for path in args.output_path:
             assert Path(path).suffix in ['.pdb', '.xtc'], f"Output path {path} must have .pdb or .xtc ending."

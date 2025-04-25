@@ -13,4 +13,5 @@ setup(
             "bbflow_sample=bbflow.deployment.cmd_line_entry:_sample",
         ],
     },
+    tests_require=["pytest"],
 )

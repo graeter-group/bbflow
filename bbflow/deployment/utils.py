@@ -55,7 +55,7 @@ def get_root_dir()->Path:
     return Path(__file__).parent.parent.parent
 
 
-def ckpt_path_from_tag(tag:str='latest'):
+def ckpt_path_from_tag(tag:str='latest', force_download:bool=False) -> Path:
     """
     Get the path to the checkpoint assumed to be located at root_dir/models/tag/*.ckpt. Checks existence and uniqueness of the checkpoint file and existence of the config file.
     """
@@ -66,8 +66,10 @@ def ckpt_path_from_tag(tag:str='latest'):
     root_dir = get_root_dir()
     ckpt_dir = root_dir / 'models' / tag
 
-    if not (ckpt_dir/'config.yaml').exists():
-        logging.info(f"Config file not found in {ckpt_dir}. Downloading the model with tag {tag}...")
+    if not (ckpt_dir/'config.yaml').exists() or force_download:
+        if not (ckpt_dir/'config.yaml').exists():
+            logging.info(f"Config file not found in {ckpt_dir}.")
+        logging.info(f"Downloading the model with tag {tag}...")
 
         if not tag in CKPT_URLS.keys():
             raise FileNotFoundError(f"Checkpoint directory {ckpt_dir} not found and {tag} not found in the hard-coded URLs for downloading.")

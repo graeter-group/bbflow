@@ -30,7 +30,7 @@ slurm_logs/*
 !test_data/test_pdbs/short_equilibrium.pdb
 
 !install_utils/
-!install_utils/install.sh
+!install_utils/install_via_pip.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -19,6 +19,26 @@ Please cite the paper if you use the code.
 This repository relies on the [GAFL](https://github.com/hits-mli/gafl) package and code from [FrameFlow](https://github.com/microsoft/protein-frame-flow).
 
 
+# Usage
+
+After installing the bbflow package, you can generate ensemble directly in python:
+
+```python
+from bbflow.deployment.bbflow import BBFlow
+bbflow_sampler = BBFlow.from_tag('latest')
+bbflow_sampler.sample(input_path='<path/to/equilibrium.pdb>', output_path='<path/to/output_ensemble.pdb>', num_samples=50)
+```
+
+or by using the command line interface:
+
+```bash
+bbflow_sample --input_path <path/to/equilibrium.pdb> --output_path <path/to/output_ensemble.pdb> --num_samples 50
+```
+
+For more details, see the example scripts at `scripts/inference_example.py` and `scripts/inference_example.sh`.
+
+
+
 # Installation
 
 ## TLDR
@@ -28,7 +48,7 @@ You can use our install script, which esssentially executes the steps specified 
 ```bash
 git clone https://github.com/graeter-group/bbflow.git
 conda create -n bbflow python=3.10 pip=23.2.1 -y
-conda activate bbflow && bash bbflow/install_utils/install.sh
+conda activate bbflow && bash bbflow/install_utils/install_via_pip.sh
 ```
 
 Verify your installation by running our example script:
@@ -107,21 +127,3 @@ conda activate bbflow
 ```
 
 Problems with torch_scatter can usually be resolved by uninstalling and re-installing it via pip for the correct torch and cuda version, e.g. `pip install torch-scatter -f https://data.pyg.org/whl/torch-2.0.0+cu124.html` for torch 2.0.0 and cuda 12.4.
-
-# Usage
-
-After installing the bbflow package, you can generate ensemble states by three lines of code:
-
-```python
-from bbflow.deployment.bbflow import BBFlow
-bbflow_sampler = BBFlow.from_tag('latest')
-bbflow_sampler.sample(input_path='<path/to/equilibrium.pdb>', output_path='<path/to/output_ensemble.pdb>', num_samples=50)
-```
-
-or by using the command line interface:
-
-```bash
-bbflow_sample --input_path <path/to/equilibrium.pdb> --output_path <path/to/output_ensemble.pdb> --num_samples 50
-```
-
-For more details, see the example scripts at `scripts/inference_example.py` and `scripts/cmd_inference_example.sh`.

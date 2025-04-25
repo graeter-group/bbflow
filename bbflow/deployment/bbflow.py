@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 import GPUtil
 import subprocess
 from typing import Optional
-from biotite.sequence.io import fasta
 from pathlib import Path
 import pandas as pd
 from pytorch_lightning import Trainer
@@ -106,7 +105,7 @@ class BBFlow:
         self._flow_module._samples_cfg = self._samples_cfg
 
     @classmethod
-    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=None, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}):
+    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=None, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}, force_download:bool=False):
         """
         Arguments:
         tag: str. Tag of the checkpoint to load. Searches the checkpoint at models/{tag}/*.ckpt. If not present, tries to download it.
@@ -115,8 +114,10 @@ class BBFlow:
         gamma_trans: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
         gamma_rots: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
         progress_bar: bool. default:True. Whether to show a progress bar during sampling.
+        _pbar_kwargs: dict. default:{} Additional arguments to pass to the progress bar.
+        force_download: bool. default:False. If True, forces the download of the checkpoint even if it is already present.
         """
-        ckpt_path = ckpt_path_from_tag(tag)
+        ckpt_path = ckpt_path_from_tag(tag, force_download=force_download)
         return cls(ckpt_path, cfg=cfg, timesteps=timesteps, gamma_trans=gamma_trans, gamma_rots=gamma_rots, progress_bar=progress_bar, _pbar_kwargs=_pbar_kwargs)
 
     def load_module(self, ckpt_path):

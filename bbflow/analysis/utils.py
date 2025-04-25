@@ -14,7 +14,7 @@ from Bio import PDB
 from openfold.utils import rigid_utils
 from gafl.data import protein
 from gafl.analysis.utils import write_prot_to_pdb, get_pdb_length
-
+from pathlib import Path
 
 Rigid = rigid_utils.Rigid
 
@@ -63,9 +63,8 @@ def write_prot_to_pdb(
     if overwrite:
         max_existing_idx = 0
     else:
-        file_dir = os.path.dirname(file_path)
         file_name = os.path.basename(file_path).strip('.pdb')
-        existing_files = [x for x in os.listdir(file_dir) if file_name in x]
+        existing_files = [str(file) for file in Path(file_path).parent.glob(f'{file_name}*.pdb')]
         max_existing_idx = max([
             int(re.findall(r'_(\d+).pdb', x)[0]) for x in existing_files if re.findall(r'_(\d+).pdb', x)
             if re.findall(r'_(\d+).pdb', x)] + [0])

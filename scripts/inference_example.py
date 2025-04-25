@@ -17,14 +17,6 @@ bbflow_sampler = BBFlow.from_tag('bbflow-mini-0.1') # use 'latest' to download a
 pdb_path = rootdir/'test_data/test_pdbs/equilibrium.pdb'
 
 #%%
-# Sample 50 conformations and save them to the output directory 
-# with a fixed batch size of 10
-bbflow_sampler.sample(
-    input_path=pdb_path, output_dir=rootdir/'test_data/test_pdbs', 
-    num_samples=50, batch_size=10
-)
-
-#%%
 # Sample 50 conformations and save them to the output path 
 # with a fixed batch size of 10
 bbflow_sampler.sample(

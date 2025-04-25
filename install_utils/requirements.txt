@@ -15,7 +15,7 @@ gputil==1.4.0
 dm-tree==0.1.8
 biotite==0.38.0
 biopython==1.81
-mdtraj==1.9.9
+mdtraj==1.10.3
 tmtools==0.0.3
 einops==0.6.1
 pytorch-lightning==1.6.5

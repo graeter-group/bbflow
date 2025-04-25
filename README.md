@@ -37,6 +37,7 @@ bbflow_sample --input_path <path/to/equilibrium.pdb> --output_path <path/to/outp
 
 For more details, see the example scripts at `scripts/inference_example.py` and `scripts/inference_example.sh`.
 
+We also provide an [example notebook in Google Colab](https://colab.research.google.com/drive/11_xvYYOM5ckmY9PiKUCLcAAB_cIpfzG4?usp=sharing), for which no local installation is required.
 
 
 # Installation

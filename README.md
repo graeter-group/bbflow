@@ -43,15 +43,15 @@ For more details, see the example scripts at `scripts/inference_example.py` and 
 
 ## TLDR
 
-You can use our install script, which esssentially executes the steps specified below:
+You can use our install script (here for torch version 2.6.0 and cuda 12.4), which esssentially executes the steps specified below:
 
 ```bash
 git clone https://github.com/graeter-group/bbflow.git
 conda create -n bbflow python=3.10 pip=23.2.1 -y
-conda activate bbflow && bash bbflow/install_utils/install_via_pip.sh
+conda activate bbflow && bash bbflow/install_utils/install_via_pip.sh 2.6.0 124
 ```
 
-Verify your installation by running our example script:
+Verify your installation by running our example script or `pytest`:
 
 ```bash
 bash bbflow/scripts/inference_example.sh

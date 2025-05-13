@@ -9,7 +9,7 @@ import requests
 from tqdm.auto import tqdm
 
 
-LATEST_TAG = 'bbflow-multimer-0.1'
+LATEST_TAG = 'bbflow-0.1'
 CKPT_URLS = {
     'bbflow-0.1': 'https://keeper.mpdl.mpg.de/f/bee3c06a20b94ee2ac92/?dl=1',
     'bbflow-mini-0.1': 'https://keeper.mpdl.mpg.de/f/6468bf14741241ada585/?dl=1',

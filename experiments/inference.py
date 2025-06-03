@@ -49,6 +49,7 @@ class Sampler:
         # both only necessary if prior != pure_noise
         cfg.inference.interpolant.prior_conditional = ckpt_cfg.interpolant.prior_conditional
         cfg.inference.interpolant.batch_ot = ckpt_cfg.interpolant.batch_ot
+        cfg.model.embed = ckpt_cfg.model.embed
 
         self._cfg = cfg
         self._ckpt_cfg = ckpt_cfg
@@ -101,9 +102,16 @@ class Sampler:
         
         if self._infer_cfg.csv_path is not None:
             csv = pd.read_csv(self._infer_cfg.csv_path)
-            dataset = PDBDatasetBBFlowFromPdb(csv, sort=self._infer_cfg.sort)
+            dataset = PDBDatasetBBFlowFromPdb(
+                csv, 
+                sort=self._infer_cfg.sort,
+                min_length=0 if self._infer_cfg.min_length is None else self._infer_cfg.min_length,
+                max_length=np.inf if self._infer_cfg.max_length is None else self._infer_cfg.max_length,
+            )
         else:
             raise ValueError('No csv path provided')
+        
+        log.info(f"Sampling {self._infer_cfg.samples.samples_per_protein} conformations per Protein for {len(dataset)} proteins.")
         
         dataloader = DataLoader(
             dataset,

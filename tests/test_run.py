@@ -8,9 +8,9 @@ def bbflow_sampler():
     Fixture to set up the BBFlow model for testing.
     This will download the model.
     """
-    bbflow_sampler = BBFlow.from_tag('bbflow-mini-0.1', force_download=True)
+    bbflow_sampler_ = BBFlow.from_tag('bbflow-mini-0.1', force_download=True)
     
-    return bbflow_sampler
+    return bbflow_sampler_
 
 def test_run(bbflow_sampler):
     """
@@ -29,3 +29,23 @@ def test_run(bbflow_sampler):
         input_path=pdb_path, output_path=outpath,
         num_samples=2, batch_size=1
     )
+
+# slow test:
+@pytest.mark.slow
+def test_run_all():
+    for tag in ['bbflow-multimer-0.2', 'bbflow-0.1']:
+        bbflow_sampler_ = BBFlow.from_tag(tag=tag, force_download=True)
+        
+        rootdir = Path(__file__).parent.parent
+        # Load the BBFlow model
+
+        pdb_path = rootdir/'test_data/test_pdbs/short_equilibrium.pdb'
+        outpath = rootdir/f'test_data/test_pdbs/test_samples_{tag}.pdb'
+
+        if outpath.exists():
+            outpath.unlink()
+
+        bbflow_sampler_.sample(
+            input_path=pdb_path, output_path=outpath,
+            num_samples=2, batch_size=1
+        )

@@ -99,9 +99,9 @@ class PdbDataModuleBBFlow(LightningDataModule):
         
 
         self.test_csv = pd.read_csv(self.dataset_cfg.test_csv_path)
-        self.test_csv = self.test_csv[self.test_csv.modeled_seq_len <= self.dataset_cfg.max_num_res]
-        self.test_csv = self.test_csv[self.test_csv.modeled_seq_len >= self.dataset_cfg.min_num_res]
-        self.test_csv = self.test_csv.sort_values('modeled_seq_len', ascending=True).reset_index(drop=True)
+        # self.test_csv = self.test_csv[self.test_csv.modeled_seq_len <= self.dataset_cfg.max_num_res]
+        # self.test_csv = self.test_csv[self.test_csv.modeled_seq_len >= self.dataset_cfg.min_num_res]
+        # self.test_csv = self.test_csv.sort_values('modeled_seq_len', ascending=True).reset_index(drop=True)
 
         if self.dataset_cfg.subset is not None:
             self.train_csv = self.train_csv.iloc[:self.dataset_cfg.subset]
@@ -272,37 +272,51 @@ class PDBDatasetBBFlowFromPdb(Dataset):
     Used for inference where a csv file with pdb paths
     is given and for the validation set during training.
     """
-    def __init__(self, csv, sort=False):
+    def __init__(self, csv, sort=False, min_length=0, max_length=np.inf):
         self.csv = csv
 
         self.trans = []
         self.rotmats = []
         self.pdb_names = []
         self.seqs = []
-        self._preprocess_pdb(sort)
+        self._preprocess_pdb(sort, min_length, max_length)
 
-    def _preprocess_pdb(self, sort):
+    def _preprocess_pdb(self, sort, min_length, max_length):
+        lengths = []
         for i, row in self.csv.iterrows():
             pdb_path = row['pdb_path']
             pdb_name = row['pdb_name']
 
             trans, rotmats, seq_onehot, _ = frames_from_pdb(pdb_path)
 
+            lengths.append(len(seq_onehot))
+            if len(seq_onehot) < min_length or len(seq_onehot) > max_length:
+                continue
+
             self.trans.append(trans)
             self.rotmats.append(rotmats)
             self.pdb_names.append(pdb_name)
             self.seqs.append(seq_onehot)
 
+        self.csv.insert(len(self.csv.columns), 'modeled_seq_len', lengths)
+        self.csv = self.csv[self.csv['modeled_seq_len'] >= min_length]
+        self.csv = self.csv[self.csv['modeled_seq_len'] <= max_length]
+        self.csv = self.csv.reset_index(drop=True)
+
         lengths = [len(seq) for seq in self.seqs]
         if sort:
-            indices = np.argsort(lengths)
+            if sort == "descending" or sort == "reverse":
+                indices = np.argsort(lengths)[::-1]
+            else:
+                indices = np.argsort(lengths)
             self.trans = [self.trans[i] for i in indices]
             self.rotmats = [self.rotmats[i] for i in indices]
             self.pdb_names = [self.pdb_names[i] for i in indices]
             self.seqs = [self.seqs[i] for i in indices]
             self.csv = self.csv.iloc[indices]
             lengths = [lengths[i] for i in indices]
-        self.csv.insert(1, 'modeled_seq_len', lengths)
+
+        self.csv = self.csv.reset_index(drop=True)
 
 
     def __len__(self):
@@ -368,6 +382,21 @@ class LengthBatcherBBFlow:
         self._num_batches = max(lengths)
         self._log.info(f"Using {self._num_batches} batches per rank")
 
+    def _get_indices(self, max_conformations, num_conformations, index):
+        # Number of trajectories per protein hardcoded to 3 for now (as in ATLAS)
+        traj_indices = np.sort(np.random.choice(3, max_conformations, replace=True))
+        traj_indices = torch.tensor(traj_indices)
+        conf_indices = []
+        for i in range(3):
+            conf_indices.append(np.random.choice(num_conformations, (traj_indices==i).sum().item(), replace=False))
+        conf_indices = torch.tensor(np.concatenate(conf_indices))
+
+        protein_index = torch.ones(max_conformations, dtype=torch.long) * index
+        return torch.stack([
+            protein_index,  # index of protein
+            traj_indices,   # index of trajectory
+            conf_indices,   # index of conformation in trajectory
+        ], dim=1)
  
     def _replica_epoch_batches(self, rank=0):
         # Make sure all replicas share the same seed on each epoch.
@@ -400,20 +429,11 @@ class LengthBatcherBBFlow:
                     row['num_conformations']
                 )
 
-                # Number of trajectories per protein hardcoded to 3 for now (as in ATLAS)
-                traj_indices = np.sort(np.random.choice(3, max_conformations, replace=True))
-                traj_indices = torch.tensor(traj_indices)
-                conf_indices = []
-                for i in range(3):
-                    conf_indices.append(np.random.choice(row['num_conformations'], (traj_indices==i).sum().item(), replace=False))
-                conf_indices = torch.tensor(np.concatenate(conf_indices))
-
-                protein_index = torch.ones(max_conformations, dtype=torch.long) * row["index"]
-                protein_indices.append(torch.stack([
-                    protein_index,  # index of protein
-                    traj_indices,   # index of trajectory
-                    conf_indices,   # index of conformation in trajectory
-                ], dim=1))
+                indices = self._get_indices(
+                    max_conformations, row['num_conformations'], row['index']
+                )
+                    
+                protein_indices.append(indices)
 
 
             protein_indices = torch.cat(protein_indices, dim=0)

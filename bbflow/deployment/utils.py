@@ -9,16 +9,20 @@ import requests
 from tqdm.auto import tqdm
 
 
-LATEST_TAG = 'bbflow-0.1'
+LATEST_TAG = 'bbflow-multimer-0.2'
 CKPT_URLS = {
-    'bbflow-0.1': 'https://keeper.mpdl.mpg.de/f/bee3c06a20b94ee2ac92/?dl=1',
+    'bbflow-0.1': 'https://keeper.mpdl.mpg.de/f/918e443c39ee43d1a3e5/?dl=1',
+    'bbflow-0.1-old': 'https://keeper.mpdl.mpg.de/f/bee3c06a20b94ee2ac92/?dl=1',
     'bbflow-mini-0.1': 'https://keeper.mpdl.mpg.de/f/6468bf14741241ada585/?dl=1',
     'bbflow-multimer-0.1': 'https://keeper.mpdl.mpg.de/f/5f34210827e44bbabea3/?dl=1',
+    'bbflow-multimer-0.2': 'https://keeper.mpdl.mpg.de/f/6a7b1fedd8ac4dda8e22/?dl=1',
 }
 CONFIG_URLS = {
-    'bbflow-0.1': 'https://keeper.mpdl.mpg.de/f/7ed49e41d7c444569a11/?dl=1',
+    'bbflow-0.1': 'https://keeper.mpdl.mpg.de/f/2d9db8c0433f429c8d2f/?dl=1',
+    'bbflow-0.1-old': 'https://keeper.mpdl.mpg.de/f/7ed49e41d7c444569a11/?dl=1',
     'bbflow-mini-0.1': 'https://keeper.mpdl.mpg.de/f/f45f13e93d564d29a605/?dl=1',
     'bbflow-multimer-0.1': 'https://keeper.mpdl.mpg.de/f/2c66f84f39b640faab38/?dl=1',
+    'bbflow-multimer-0.2': 'https://keeper.mpdl.mpg.de/f/346a25bca784417a8e3d/?dl=1',
 }
 
 

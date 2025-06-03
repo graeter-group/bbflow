@@ -27,7 +27,6 @@ from gafl.data.interpolant import (
 )
 
 
-
 class InterpolantBBFlow(Interpolant):
 
     def __init__(self, cfg):

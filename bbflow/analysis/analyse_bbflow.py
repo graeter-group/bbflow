@@ -62,22 +62,25 @@ def _get_wasserstein(distmat, p=2):
     row_ind, col_ind = linear_sum_assignment(distmat)
     return distmat[row_ind, col_ind].mean() ** (1/p)
 
-def _align_tops(top1, top2, ignore_resname=False):
-    if ignore_resname:
-        names1 = [repr(a)[3:] for a in top1.atoms]
-        names2 = [repr(a)[3:] for a in top2.atoms]
-    else:
-        names1 = [repr(a) for a in top1.atoms]
-        names2 = [repr(a) for a in top2.atoms]
+def _get_names(top, ignore_resname=False):
+    names = []
+    for residue in top.residues:
+        for atom in residue.atoms:
+            name = f"{atom.residue.chain.index}-{atom.residue.index}"
+            if not ignore_resname:
+                name += f"-{atom.residue.name}"
+            name += f"-{atom.name}"
+            names.append(name)
+    return names
 
-    # print(names1)
-    # print(names2)
+def _align_tops(top1, top2, ignore_resname=False):
+    names1 = _get_names(top1, ignore_resname)
+    names2 = _get_names(top2, ignore_resname)
+
     intersection = [nam for nam in names1 if nam in names2]
     
     mask1 = [names1.index(nam) for nam in intersection]
     mask2 = [names2.index(nam) for nam in intersection]
-    # print(mask1)
-    # print(mask2)
     return sorted(mask1), sorted(mask2)
 
 def _calculate_dccm_vectorized(traj):
@@ -223,6 +226,81 @@ def _calc_weak_transient_contacts(ref_traj, model_traj, ref):
         # 'model_contact_prob': model_contact_prob,
         # 'crystal_distmat': crystal_distmat,
         'weak_transient_contacts_time_elapsed': (datetime.now() - time_start).total_seconds(),
+    }
+
+def _calc_clashes(traj, ref, threshold=3):
+    # print("Calculating clashes")
+    time_start = datetime.now()
+    distmat = np.linalg.norm(traj.xyz[:,None,:,:] - traj.xyz[:,:,None,:], axis=-1)
+    distmat = distmat * 10
+    distmat[:, np.arange(traj.n_residues), np.arange(traj.n_residues)] = np.inf
+    indices = np.triu_indices(distmat.shape[1], k=1)
+
+    if threshold == "include_CACA_MD_dist":
+        # some input equilibrium structures of ATLAS have neighbours
+        # whose distance is around 3.2 A, instead of the normal 3.8.
+        dist_CACA_ref = np.linalg.norm(ref.xyz[0,1:,:] - ref.xyz[0,:-1,:], axis=-1)
+        dist_CACA_ref = dist_CACA_ref * 10
+        small_CA_dist = dist_CACA_ref < 3.5
+        default_threshold = 3.0
+        CA_dist_threshold = np.ones((traj.n_frames, traj.n_residues-1)) * default_threshold
+        CA_dist_threshold[:,small_CA_dist] = 2.8
+        threshold = default_threshold * np.ones_like(distmat)
+        threshold[:, np.arange(traj.n_residues-1), np.arange(1, traj.n_residues)] = CA_dist_threshold
+        threshold[:, np.arange(1, traj.n_residues), np.arange(traj.n_residues-1)] = CA_dist_threshold
+        threshold_flat = threshold.reshape(traj.n_frames, -1)
+        threshold_nn = threshold[:, indices[0], indices[1]]
+    else:
+        threshold_flat = threshold * np.ones_like(distmat.reshape(traj.n_frames, -1))
+        threshold_nn = threshold * np.ones_like(distmat[:, indices[0], indices[1]])
+
+    conf_contains_clashes = np.any(distmat.reshape(traj.n_frames, -1) < threshold_flat, axis=1)
+
+    distances = distmat[:, indices[0], indices[1]]
+
+    return {
+        'clashes_ratio_conf': conf_contains_clashes.mean(), # (num confs with clashes) / (num confs)
+        'clashes_ratio_all': (distances < threshold_nn).mean(), # (num respairs with clashes) / (num respairs)
+        'clashes_all': (distances < threshold_nn).sum(), # (num respairs with clashes)
+        'clashes_time_elapsed': (datetime.now() - time_start).total_seconds(),
+    }
+
+def _calc_CACA_breaks(traj, ref_traj, threshold=4.19):
+    # print("Calculating breaks")
+    time_start = datetime.now()
+
+    if threshold == "max_MD":
+        threshold = np.max(np.linalg.norm(ref_traj.xyz[:,1:,:] - ref_traj.xyz[:,:-1,:], axis=-1)) * 10
+
+    distances = np.linalg.norm(traj.xyz[:,1:,:] - traj.xyz[:,:-1,:], axis=-1)
+    distances = distances * 10
+    conf_contains_breaks = np.any(distances > threshold, axis=1)
+    return {
+        'breaks_CACA_ratio_conf': conf_contains_breaks.mean(), # (num confs with breaks) / (num confs)
+        'breaks_CACA_ratio_all': (distances > threshold).mean(), # (num neighbours with breaks) / (num neighbours)
+        'breaks_CACA_all': (distances > threshold).sum(), # (num neighbours with breaks)
+        'breaks_CACA_time_elapsed': (datetime.now() - time_start).total_seconds(),
+    }
+
+def _calc_NC_breaks(traj, ref_traj, threshold=1.5):
+    # print("Calculating breaks")
+    time_start = datetime.now()
+
+    if threshold == "max_MD":
+        N_pos = ref_traj.xyz[:,ref_traj.top.select('name N'),:]
+        C_pos = ref_traj.xyz[:,ref_traj.top.select('name C'),:]
+        threshold = np.max(np.linalg.norm(N_pos[:,1:,:] - C_pos[:,:-1,:], axis=-1)) * 10
+
+    N_pos = traj.xyz[:,traj.top.select('name N'),:]
+    C_pos = traj.xyz[:,traj.top.select('name C'),:]
+    distances = np.linalg.norm(N_pos[:,1:,:] - C_pos[:,:-1,:], axis=-1)
+    distances = distances * 10
+    conf_contains_breaks = np.any(distances > threshold, axis=1)
+    return {
+        'breaks_NC_ratio_conf': conf_contains_breaks.mean(), # (num confs with breaks) / (num confs)
+        'breaks_NC_ratio_all': (distances > threshold).mean(), # (num neighbours with breaks) / (num neighbours)
+        'breaks_NC_all': (distances > threshold).sum(), # (num neighbours with breaks)
+        'breaks_NC_time_elapsed': (datetime.now() - time_start).total_seconds(),
     }
     
 
@@ -379,6 +457,9 @@ def _calc_metrics(
 
     out = {}
 
+    out["length"] = ref_traj.n_residues
+    out["num_conformations"] = model_traj.n_frames
+
     if metrics_subset is None or "RMSD" in metrics_subset:
         out.update(_calc_rmsd(ref_traj_RAND1, ref_traj_RAND2, model_traj))
 
@@ -450,10 +531,15 @@ def _calc_metrics(
 
     if metrics_subset is None or "Weak Transient Contacts" in metrics_subset:
         out.update(_calc_weak_transient_contacts(ref_traj_RAND1, model_traj, ref))
+
+    if metrics_subset is None or "Breaks and Clashes" in metrics_subset:
+        out.update(_calc_clashes(model_traj, ref, threshold="include_CACA_MD_dist"))
+        out.update(_calc_CACA_breaks(model_traj, ref_traj, threshold="max_MD"))
+        out.update(_calc_NC_breaks(model_traj_aa, ref_traj_aa, threshold="max_MD"))
     
     return out
 def _calc_metrics_bootstrap(
-        name, reference_dirs, pdbdirs, num_bootstrap_samples=1,
+        name, reference_dirs, pdbdirs, num_conformations=None, num_bootstrap_samples=1,
         seed=None, load_subset=False, metrics_subset=None,
         load_ref_fn=_load_ref_traj_full, load_model_fn=_load_model_traj,
     ):
@@ -466,7 +552,8 @@ def _calc_metrics_bootstrap(
     # load reference and model trajectories
     model_traj_aa = load_model_fn(name, pdbdirs)
     ref_aa, ref_traj_aa, rand_indices = load_ref_fn(
-        name, reference_dirs, model_traj_aa.n_frames
+        name, reference_dirs, 
+        model_traj_aa.n_frames if num_conformations is None else num_conformations
     )
     loading_traj_time_elapsed = (datetime.now() - time_start).total_seconds()
     RAND1, RAND2, RAND1K = rand_indices
@@ -480,6 +567,17 @@ def _calc_metrics_bootstrap(
 
     
     if num_bootstrap_samples == 1:
+        if num_conformations is not None and num_conformations < model_traj_aa.n_frames:
+            model_indices = np.random.choice(
+                model_traj_aa.n_frames, num_conformations, replace=False
+            )
+            model_traj_aa = model_traj_aa[model_indices]
+            model_traj = model_traj[model_indices]
+            
+            RAND1 = np.random.randint(0, ref_traj_aa.n_frames, model_traj_aa.n_frames)
+            RAND2 = np.random.randint(0, ref_traj_aa.n_frames, model_traj_aa.n_frames)
+            RAND1K = np.random.randint(0, ref_traj_aa.n_frames, 1000)
+
         out = _calc_metrics(
             name, metrics_subset, load_subset,
             ref_aa, ref,
@@ -496,12 +594,19 @@ def _calc_metrics_bootstrap(
     
         out = {}
         for i in range(num_bootstrap_samples):
-            RAND1 = np.random.randint(0, ref_traj_aa.n_frames, model_traj_aa.n_frames)
-            RAND2 = np.random.randint(0, ref_traj_aa.n_frames, model_traj_aa.n_frames)
+            if num_conformations is not None and num_conformations < model_traj_aa.n_frames:
+                model_indices = np.random.choice(
+                    model_traj_aa.n_frames, num_conformations, replace=False
+                )
+                model_traj_aa_i = model_traj_aa[model_indices]
+                model_traj_i = model_traj[model_indices]
+            else:
+                model_traj_aa_i = model_traj_aa
+                model_traj_i = model_traj
+                
+            RAND1 = np.random.randint(0, ref_traj_aa.n_frames, model_traj_aa_i.n_frames)
+            RAND2 = np.random.randint(0, ref_traj_aa.n_frames, model_traj_aa_i.n_frames)
             RAND1K = np.random.randint(0, ref_traj_aa.n_frames, 1000)
-
-            model_traj_aa_i = model_traj_aa
-            model_traj_i = model_traj
 
             out_i = _calc_metrics(
                 name, metrics_subset, load_subset,
@@ -540,6 +645,16 @@ def _analyze_data(data, metrics_subset=None):
             "ref": np.concatenate([data[name]['ref_dccm'].flatten() for name in data]),
             "model": np.concatenate([data[name]['model_dccm'].flatten() for name in data]),
         }
+    if metrics_subset is None or "Breaks and Clashes" in metrics_subset:
+        total_number_of_clashes = np.sum([data[name]['clashes_all'] for name in data])
+        total_number_of_confs_with_clashes = np.sum([data[name]['clashes_ratio_conf']*data[name]['num_conformations'] for name in data])
+        total_number_of_nn_pairs = sum([int(data[name]['length']*(data[name]['length']-1)/2) for name in data]) 
+        total_number_of_breaks_CACA = np.sum([data[name]['breaks_CACA_all'] for name in data])
+        total_number_of_confs_with_breaks_CACA = np.sum([data[name]['breaks_CACA_ratio_conf']*data[name]['num_conformations'] for name in data])
+        total_number_of_breaks_NC = np.sum([data[name]['breaks_NC_all'] for name in data])
+        total_number_of_confs_with_breaks_NC = np.sum([data[name]['breaks_NC_ratio_conf']*data[name]['num_conformations'] for name in data])
+        total_number_of_neighbours = sum([data[name]['length']-1 for name in data])
+        total_number_of_confs = sum([data[name]['num_conformations'] for name in data])
         
     df = []
 
@@ -612,6 +727,20 @@ def _analyze_data(data, metrics_subset=None):
                 'weak_transient_contacts_time_elapsed': out['weak_transient_contacts_time_elapsed'],
             })
 
+        if metrics_subset is None or "Breaks and Clashes" in metrics_subset:
+            item.update({
+                'clashes_ratio_conf': out['clashes_ratio_conf'],
+                'clashes_ratio_all': out['clashes_ratio_all'],
+                'clashes_all': out['clashes_all'],
+                'breaks_CACA_ratio_conf': out['breaks_CACA_ratio_conf'],
+                'breaks_CACA_ratio_all': out['breaks_CACA_ratio_all'],
+                'breaks_CACA_all': out['breaks_CACA_all'],
+                'breaks_NC_ratio_conf': out['breaks_NC_ratio_conf'],
+                'breaks_NC_ratio_all': out['breaks_NC_ratio_all'],
+                'breaks_NC_all': out['breaks_NC_all'],
+                'breaks_and_clashes_time_elapsed': out['clashes_time_elapsed'] + out['breaks_CACA_time_elapsed'] + out['breaks_NC_time_elapsed']
+            })
+
         df.append(item)
 
     df = pd.DataFrame(df).set_index('name')
@@ -664,12 +793,22 @@ def _analyze_data(data, metrics_subset=None):
         metrics_dict["Per target BB-RMSF RMSE max"] = df.per_target_rmsf_rmse_bb.max()
 
     if metrics_subset is None or "DCCM" in metrics_subset:
+        metrics_dict["MD DCCM"] = np.median(concatenated_lists["dccm"]["ref"])
+        metrics_dict["DCCM"] = np.median(concatenated_lists["dccm"]["model"])
+        metrics_dict["MD DCCM mean"] = np.mean(concatenated_lists["dccm"]["ref"])
+        metrics_dict["DCCM mean"] = np.mean(concatenated_lists["dccm"]["model"])
         metrics_dict["Global DCCM r"] = scipy.stats.pearsonr(concatenated_lists["dccm"]["ref"], concatenated_lists["dccm"]["model"])[0]
         metrics_dict["Global DCCM MAE"] = np.abs(concatenated_lists["dccm"]["ref"] - concatenated_lists["dccm"]["model"]).mean()
         metrics_dict["Global DCCM RMSE"] = np.sqrt(((concatenated_lists["dccm"]["ref"] - concatenated_lists["dccm"]["model"]) ** 2).mean())
         metrics_dict["Per target DCCM r"] = df.per_target_dccm_corr.median()
+        metrics_dict["Per target DCCM r mean"] = df.per_target_dccm_corr.mean()
+        metrics_dict["Per target DCCM r min"] = df.per_target_dccm_corr.min()
         metrics_dict["Per target DCCM MAE"] = df.per_target_dccm_mae.median()
+        metrics_dict["Per target DCCM MAE mean"] = df.per_target_dccm_mae.mean()
+        metrics_dict["Per target DCCM MAE max"] = df.per_target_dccm_mae.max()
         metrics_dict["Per target DCCM RMSE"] = df.per_target_dccm_rmse.median()
+        metrics_dict["Per target DCCM RMSE mean"] = df.per_target_dccm_rmse.mean()
+        metrics_dict["Per target DCCM RMSE max"] = df.per_target_dccm_rmse.max()
 
     if metrics_subset is None or "RMWD" in metrics_subset:
         metrics_dict["RMWD"] = df.rmwd.median()
@@ -693,6 +832,35 @@ def _analyze_data(data, metrics_subset=None):
         metrics_dict["Transient contacts J"] = df.transient_contacts.median()
         metrics_dict["Transient contacts nans"] = df.transient_contacts.isna().mean()
 
+    if metrics_subset is None or "Breaks and Clashes" in metrics_subset:
+        metrics_dict["Conf \\w clash ratio"] = df.clashes_ratio_conf.median() * 100
+        metrics_dict["Conf \\w clash ratio mean"] = df.clashes_ratio_conf.mean() * 100
+        metrics_dict["Conf \\w clash ratio max"] = df.clashes_ratio_conf.max() * 100
+        metrics_dict["Per target clash ratio"] = df.clashes_ratio_all.median() * 100
+        metrics_dict["Per target clash ratio mean"] = df.clashes_ratio_all.mean() * 100
+        metrics_dict["Per target clash ratio max"] = df.clashes_ratio_all.max() * 100
+        metrics_dict["Clash ratio"] = total_number_of_clashes / (total_number_of_nn_pairs * total_number_of_confs) * 100
+        metrics_dict["Conf \\w clash ratio total"] = total_number_of_confs_with_clashes / total_number_of_confs * 100
+
+        metrics_dict["Conf \\w CACA breaks ratio"] = df.breaks_CACA_ratio_conf.median() * 100
+        metrics_dict["Conf \\w CACA breaks ratio mean"] = df.breaks_CACA_ratio_conf.mean() * 100
+        metrics_dict["Conf \\w CACA breaks ratio max"] = df.breaks_CACA_ratio_conf.max() * 100
+        metrics_dict["Per target CACA breaks ratio"] = df.breaks_CACA_ratio_all.median() * 100
+        metrics_dict["Per target CACA breaks ratio mean"] = df.breaks_CACA_ratio_all.mean() * 100
+        metrics_dict["Per target CACA breaks ratio max"] = df.breaks_CACA_ratio_all.max() * 100
+        metrics_dict["CACA breaks ratio"] = total_number_of_breaks_CACA / (total_number_of_neighbours * total_number_of_confs) * 100
+        metrics_dict["Conf \\w CACA breaks ratio total"] = total_number_of_confs_with_breaks_CACA / total_number_of_confs * 100
+
+        metrics_dict["Conf \\w NC breaks ratio"] = df.breaks_NC_ratio_conf.median() * 100
+        metrics_dict["Conf \\w NC breaks ratio mean"] = df.breaks_NC_ratio_conf.mean() * 100
+        metrics_dict["Conf \\w NC breaks ratio max"] = df.breaks_NC_ratio_conf.max() * 100
+        metrics_dict["Per target NC breaks ratio"] = df.breaks_NC_ratio_all.median() * 100
+        metrics_dict["Per target NC breaks ratio mean"] = df.breaks_NC_ratio_all.mean() * 100
+        metrics_dict["Per target NC breaks ratio max"] = df.breaks_NC_ratio_all.max() * 100
+        metrics_dict["NC breaks ratio"] = total_number_of_breaks_NC / (total_number_of_neighbours * total_number_of_confs) * 100
+        metrics_dict["Conf \\w NC breaks ratio total"] = total_number_of_confs_with_breaks_NC / total_number_of_confs * 100
+
+
     #for col in df.columns:
     #    if col.endswith("_time_elapsed"):
     #        print(col, df[col].sum())
@@ -703,7 +871,7 @@ def _analyze_data(data, metrics_subset=None):
 
 def calc_metrics(
         pdb_names, reference_dirs, pdbdirs, seed, num_workers, 
-        num_bootstrap_samples=1,
+        num_conformations=None, num_bootstrap_samples=1,
         load_subset=False, metrics_subset=None, 
         load_ref_fn=_load_ref_traj_full, load_model_fn=_load_model_traj,
         use_tqdm=False
@@ -725,6 +893,7 @@ def calc_metrics(
         _calc_metrics_bootstrap, 
         reference_dirs=reference_dirs, 
         pdbdirs=pdbdirs,
+        num_conformations=num_conformations,
         num_bootstrap_samples=num_bootstrap_samples,
         seed=seed,
         load_subset=load_subset,

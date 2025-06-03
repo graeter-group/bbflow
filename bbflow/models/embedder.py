@@ -44,7 +44,7 @@ class MLP(nn.Module):
         return x
 
 
-def embed_direction(trans, rots):
+def embed_direction(trans, rots, dist_cutoff=np.inf):
     """
     Compute the position of the other residues from the
     perspective of each residue.
@@ -62,10 +62,15 @@ def embed_direction(trans, rots):
     frames = du.create_rigid(rots, trans)
     rel_pos = frames[:,:,None].invert_apply(trans[:,None,:])
     # rel_pos.shape = [B, N, N, 3]
-    rel_pos = rel_pos / (torch.linalg.norm(rel_pos, dim=-1, keepdim=True) + 1e-6)
+    distances = torch.linalg.norm(rel_pos, dim=-1)
+    rel_pos = rel_pos / (distances[...,None] + 1e-6)
     indices = torch.arange(N, device=device)
     rel_pos[:, indices, indices, :] = torch.zeros(3, device=device)
-    
+    if dist_cutoff < np.inf:
+        # Set all direction vectors to zero if the distance is greater than dist_cutoff
+        mask = distances > dist_cutoff
+        rel_pos[mask,:] = 0
+
     return rel_pos
 
 
@@ -107,18 +112,34 @@ class Embedder(nn.Module):
 
         self.embed_direction = model_conf.embed.embed_direction
         if self.embed_direction:
+            if hasattr(model_conf.embed, "embed_direction_cutoff") and model_conf.embed.embed_direction_cutoff is not None:
+                self.embed_direction_cutoff = model_conf.embed.embed_direction_cutoff
+            else:
+                self.embed_direction_cutoff = np.inf
             edge_dim_in += 3
 
         # positional encoding
-        if model_conf.embed.index_embed_dim > 0:
+        # if model_conf.embed.index_embed_dim > 0:
+        if hasattr(model_conf.embed, "index_embed_type"):
+            self.index_embed_type = model_conf.embed.index_embed_type
             self.index_embed_dim = model_conf.embed.index_embed_dim
+        else:
+            self.index_embed_dim = model_conf.embed.index_embed_dim
+            self.index_embed_type = None if self.index_embed_dim == 0 else "full"
+
+        if self.index_embed_type is None or self.index_embed_type == "none":
+            self.index_embed_type = None
+        elif self.index_embed_type == "full":
+            assert self.index_embed_dim > 0, "index_embed_dim must be > 0 if index_embed_type is 'full'."
             node_dim_in += self.index_embed_dim
             edge_dim_in += self.index_embed_dim
             self.linear_relpos = nn.Linear(
                 self.index_embed_dim, self.index_embed_dim
             )
+        elif self.index_embed_type == "neighbor":
+            edge_dim_in += 1
         else:
-            self.index_embed_dim = 0
+            raise ValueError("index_embed_type must be None/\"none\", 'full' or 'neighbor'.")
 
 
         if self.embed_aatype:
@@ -191,6 +212,7 @@ class Embedder(nn.Module):
             direction_embedding = embed_direction(
                 input_features["CA_pos"]["trans_equilibrium"],
                 input_features["rotmats_equilibrium"],
+                dist_cutoff=self.embed_direction_cutoff
             )
             z_0.append(direction_embedding.reshape([B, N**2, -1]))
 
@@ -204,13 +226,21 @@ class Embedder(nn.Module):
         length_embedding = length_embedding.repeat([B, 1, 1])
         h_0.append(length_embedding)
 
-        if self.index_embed_dim > 0:
+        if self.index_embed_type is None:
+            pass
+        elif self.index_embed_type == "full":
             seq_idx = torch.arange(N).repeat(B, 1).to(device=device)
             h_0.append(self.index_embedder(seq_idx))
             rel_seq_offset = seq_idx[:, :, None] - seq_idx[:, None, :]
             rel_seq_offset = rel_seq_offset.reshape([B, N**2])
             z_0.append(self.linear_relpos(self.index_embedder(rel_seq_offset)))
-        
+        elif self.index_embed_type == "neighbor":
+            neighbors = torch.diag_embed(torch.ones(N-1, device=device), offset=1) + \
+                torch.diag_embed(torch.ones(N-1, device=device), offset=-1)
+            neighbors = neighbors[None].repeat(B, 1, 1).reshape([B, N**2])[...,None]
+            z_0.append(neighbors)
+        else:
+            raise ValueError("index_embed_type must be None/'none', 'full' or 'neighbor'.")
 
         h_0 = torch.cat(h_0, dim=-1)
         h_0 = self.node_embedding(h_0)

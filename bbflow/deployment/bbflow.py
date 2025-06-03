@@ -67,7 +67,11 @@ class BBFlow:
             assert isinstance(timesteps, int), "timesteps must be an integer."
             if not 'inference' in cfg:
                 cfg['inference'] = {}
-            cfg['inference']['timesteps'] = timesteps
+            if not 'interpolant' in cfg['inference']:
+                cfg['inference']['interpolant'] = {}
+            if not 'sampling' in cfg['inference']['interpolant']:
+                cfg['inference']['interpolant']['sampling'] = {}
+            cfg['inference']['interpolant']['sampling']['num_timesteps'] = timesteps
 
         default_inference_config = Path(__file__).parent.parent.parent / 'configs/inference.yaml'
         cfg_ = OmegaConf.load(default_inference_config)
@@ -90,8 +94,11 @@ class BBFlow:
             
         cfg.inference.interpolant.prior_conditional.gamma_rots = gamma_rots
         cfg.inference.interpolant.prior_conditional.gamma_trans = gamma_trans
+        cfg.model = ckpt_cfg.model
 
         self._cfg = cfg
+        self._cfg.interpolant = cfg.inference.interpolant
+        self._cfg.interpolant.use_tqdm = False
         self._ckpt_cfg = ckpt_cfg
         self._infer_cfg = cfg.inference
         self._samples_cfg = self._infer_cfg.samples
@@ -105,7 +112,7 @@ class BBFlow:
         self._flow_module._samples_cfg = self._samples_cfg
 
     @classmethod
-    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=None, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}, force_download:bool=False):
+    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=20, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}, force_download:bool=False):
         """
         Arguments:
         tag: str. Tag of the checkpoint to load. Searches the checkpoint at models/{tag}/*.ckpt. If not present, tries to download it.
@@ -172,9 +179,10 @@ class BBFlow:
 
         # sample states:
         sampled_conformations = []
+
         with torch.no_grad():
             for b in batches:
-                atom37_traj, model_traj, _ = interpolant.sample(
+                atom37_traj, pred_traj, _ = interpolant.sample(
                     b,
                     num_res,
                     self._flow_module.model,
@@ -183,7 +191,7 @@ class BBFlow:
                     seq.repeat(b, 1, 1),
                 )
                 atom37_traj = du.to_numpy(torch.stack(atom37_traj, dim=1))
-                
+
                 # remove the c betas. they are not predicted by the network but rule based and have no real meaning
                 # Masking CB atoms
                 # atom37 bb order = ['N', 'CA', 'C', 'CB', 'O']
@@ -197,7 +205,7 @@ class BBFlow:
         
         # (num_samples, num_residues, 37, 3)
         sampled_conformations = np.stack(sampled_conformations, axis=0)
-
+        
         return sampled_conformations
 
 

@@ -3,6 +3,7 @@ node_embed_size: 240
 edge_embed_size: 120
 
 embed:
+  index_embed_type: "full"
   index_embed_dim: 128
   time_embed_dim: 128
   embed_aatype: True
@@ -14,6 +15,7 @@ embed:
   max_bin_distance: 20.0
   embed_distogram: True
   embed_direction: False
+  embed_direction_cutoff: null # cutoff in Angstrom, null means no cutoff. Only used if embed_direction is True
 
 node_features:
   c_s: ${model.node_embed_size}

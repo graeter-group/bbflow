@@ -238,7 +238,7 @@ class BBFlowModule(FlowModule):
         
         for sample_ids in sample_ids_batches:
             B = len(sample_ids)
-            atom37_traj, model_traj, _ = interpolant.sample(
+            atom37_traj, pred_traj, _ = interpolant.sample(
                 B,
                 N,
                 self.model,
@@ -248,9 +248,15 @@ class BBFlowModule(FlowModule):
             )
 
             atom37_traj = du.to_numpy(torch.stack(atom37_traj, dim=1))
-            model_traj = du.to_numpy(torch.stack(model_traj, dim=1))
+            pred_traj = du.to_numpy(torch.stack(pred_traj, dim=1))
             torch.cuda.empty_cache()
             # B, T, N, 37, 3
+
+            # remove the c betas. they are not predicted by the network but rule based and have no real meaning
+            # Masking CB atoms
+            # atom37 bb order = ['N', 'CA', 'C', 'CB', 'O']
+            atom37_traj[..., 3, :] = 0
+            pred_traj[..., 3, :] = 0
 
             for i, sample_id in enumerate(sample_ids):
                 sampled_conformations.append(atom37_traj[i, -1])
@@ -261,7 +267,7 @@ class BBFlowModule(FlowModule):
                     eu.save_traj(
                         atom37_traj[i, -1],
                         np.flip(atom37_traj[i], axis=0),
-                        np.flip(model_traj[i], axis=0),
+                        np.flip(pred_traj[i], axis=0),
                         du.to_numpy(diffuse_mask)[0],
                         output_dir=sample_dir,
                     )
@@ -314,8 +320,6 @@ class BBFlowModule(FlowModule):
         sample_time_start = datetime.now()
 
         N = batch["trans_equilibrium"].shape[1]
-        # TODO: 2_900_000 is hardcoded for one A100
-        # TODO: 500_000 is hardcoded for one RTX 2080 Super
         batch_size = self._infer_cfg.samples.num_res_squared / N**2
         batch_size = max(
             1,

@@ -113,6 +113,7 @@ pip install -e .
 cd ..
 
 # install bbflow:
+cd bbflow
 pip install -e .
 ```
 

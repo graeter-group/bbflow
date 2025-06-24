@@ -1,4 +1,4 @@
-name: bbflow-conda
+name: bbflow
 channels:
   - pyg
   - pytorch

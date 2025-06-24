@@ -44,7 +44,7 @@ We also provide an [example notebook in Google Colab](https://colab.research.goo
 
 ## TLDR
 
-You can use our install script (here for torch version 2.6.0 and cuda 12.4), which esssentially executes the steps specified below:
+You can use our install script (here for torch version 2.6.0 and cuda 12.4), which esssentially executes the steps specified in section **pip** below:
 
 ```bash
 git clone https://github.com/graeter-group/bbflow.git
@@ -102,7 +102,7 @@ BBFlow relies on the [GAFL](https://github.com/hits-mli/gafl) package, which can
 # download bbflow:
 git clone https://github.com/graeter-group/bbflow.git
 # create env with dependencies:
-conda env create -f bbflow/install_utils/environment.yaml
+conda env create -f bbflow/install_utils/minimal_env.yaml
 conda activate bbflow
 
 # install gafl:
@@ -113,18 +113,10 @@ pip install -e .
 cd ..
 
 # install bbflow:
+cd bbflow
 pip install -e .
 ```
 
 ## Common installation issues
-
-If you encounter problems with the cuda version, you can also install the requirements from a minimal conda enviroment, modified to contain your torch and cuda version of choice:
-
-```bash
-# ...
-conda env create -f bbflow/install_utils/minimal_env.yaml
-conda activate bbflow
-# ...
-```
 
 Problems with torch_scatter can usually be resolved by uninstalling and re-installing it via pip for the correct torch and cuda version, e.g. `pip install torch-scatter -f https://data.pyg.org/whl/torch-2.0.0+cu124.html` for torch 2.0.0 and cuda 12.4.

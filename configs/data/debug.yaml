@@ -1,0 +1,7 @@
+defaults:
+  - default
+
+dataset:
+  subset: 20
+  min_num_res: 0
+  max_num_res: 100

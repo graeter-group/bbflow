@@ -344,7 +344,7 @@ def _load_ref_traj_full(name, reference_dirs, n_confs):
         ref_traj_aa = mdtraj.load(f'{reference_dir}/{name}/{name}_R1.xtc', top=topfile) \
             + mdtraj.load(f'{reference_dir}/{name}/{name}_R2.xtc', top=topfile) \
             + mdtraj.load(f'{reference_dir}/{name}/{name}_R3.xtc', top=topfile)
-    if ref_aa is None:
+    if ref_aa is None or ref_traj_aa is None:
         print(f"No reference trajectory found for {name}")
     
     RAND1 = np.random.randint(0, ref_traj_aa.n_frames, n_confs)

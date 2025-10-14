@@ -44,11 +44,11 @@ We also provide an [example notebook in Google Colab](https://colab.research.goo
 
 ## TLDR
 
-You can use our install script (here for torch version 2.6.0 and cuda 12.4), which esssentially executes the steps specified in section **pip** below:
+You can use our install script (here for torch version 2.6.0, cuda 12.4), which esssentially executes the steps specified in section **pip** below:
 
 ```bash
 git clone https://github.com/graeter-group/bbflow.git
-conda create -n bbflow python=3.10 pip=23.2.1 -y
+conda create -n bbflow python=3.12 -y
 conda activate bbflow && bash bbflow/install_utils/install_via_pip.sh 2.6.0 124
 ```
 
@@ -58,12 +58,14 @@ Verify your installation by running our example script or `pytest`:
 bash bbflow/scripts/inference_example.sh
 ```
 
+If the installation fails, you might want to try passing the python version to the install script, e.g. `bash bbflow/install_utils/install_via_pip.sh 2.6.0 124 3.12` for python 3.12, for using a versioned requirements file that was found to be compatible with the respective python version.
+
 ## pip
 
-Optional: Create a virtual environment, e.g. with conda and install pip23.2.1:
+Optional: Create a virtual environment, e.g. with conda and python 3.12:
 
 ```bash
-conda create -n bbflow python=3.10 pip=23.2.1 -y
+conda create -n bbflow python=3.12 -y
 conda activate bbflow
 ```
 
@@ -93,6 +95,8 @@ pip install torch-scatter -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
 ```
 
 where you can replace cu124 by your cuda version, e.g. cu118 or cu121.
+
+Note that you can also find requirements files with specific versions that were found to be compatible with python 3.10 and 3.12, respectively, in `install_utils`.
 
 ## conda
 

@@ -26,7 +26,7 @@ validation:
   # Used in validation for plotting.
   alphaflow_valid_pdb_paths: [null] # [./datasets/ATLAS/alphaflow_valid_pdb/]
   alphaflow_valid_rmsf_path: null # ${experiment.checkpointer.dirpath}/alphaflow_rmsf.json
-  samples_per_valid_protein: 10 # per gpu
+  samples_per_valid_protein: 16 # in total, not per gpu
   max_valid_batch_size: 100
   max_valid_num_res_squared: 2_900_000
 

@@ -13,64 +13,15 @@ import pandas as pd
 import logging
 import json
 import os
-from tqdm import tqdm
 import shutil
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
-from torch.utils.data.distributed import DistributedSampler, dist
+from torch.utils.data.distributed import dist
 import mdtraj
 
 from gafl.data.residue_constants import restype_order, restype_3to1, restypes
 
-# from bbflow.analysis.analyse_bbflow import calc_aligned_rmsf
-from bbflow.analysis.analyse_bbflow import _calc_rmsf, _align_tops
-
-from bbflow.data.utils import frames_from_pdb, backbone_to_frames
-
-
-
-def get_alphaflow_valid_rmsf(pdb_path, rmsf_file_name, xtc_path, valid_csv):
-    # Precompute RMSF for validation proteins for AlphaFlow
-    # Used for plotting rmsf-profiles in validation
-    af_valid_pdb_folder = os.path.abspath(pdb_path)
-    af_valid_rmsf_precomputed_path = os.path.abspath(os.path.join(
-        pdb_path, rmsf_file_name
-    ))
-    if os.path.exists(af_valid_rmsf_precomputed_path):
-        with open(af_valid_rmsf_precomputed_path, "r") as f:
-            rmsfs = json.load(f)
-    else:
-        rmsfs = {}
-        for i, row in tqdm(valid_csv.iterrows(), total=len(valid_csv), desc="calculate rmsf for alphaflow valid"):
-            pdb_name = row['pdb_name']
-            af_pdb_name = f"{pdb_name[:4]}_{pdb_name[4]}"
-            if not os.path.exists(os.path.join(af_valid_pdb_folder, f"{af_pdb_name}.pdb")):
-                af_pdb_name = pdb_name
-            ref = mdtraj.load(os.path.join(xtc_path, f"{pdb_name}/{pdb_name}.pdb"))
-            af_traj = mdtraj.load(os.path.join(af_valid_pdb_folder, f"{af_pdb_name}.pdb"))
-            ref.atom_slice([a.index for a in ref.top.atoms if a.element.symbol != 'H'], True)
-            af_traj.atom_slice([a.index for a in af_traj.top.atoms if a.element.symbol != 'H'], True)
-            af_traj.atom_slice([a.index for a in af_traj.top.atoms if a.name in ['CA', 'C', 'N', 'O', 'OXT']], True)
-            refmask, afmask = _align_tops(ref.top, af_traj.top, True)
-            ref.atom_slice(refmask, True)
-            af_traj.atom_slice(afmask, True)
-            ca_mask = [a.index for a in ref.top.atoms if a.name == 'CA']
-            ca_mask_model = [a.index for a in af_traj.top.atoms if a.name == 'CA']
-            ref = ref.atom_slice(ca_mask, False)
-            af_traj = af_traj.atom_slice(ca_mask_model, False)
-            af_traj.superpose(ref)
-            rmsf = _calc_rmsf(af_traj, ref, bootstrap=True)
-            rmsfs[pdb_name] = {
-                "rmsf": rmsf["rmsf"].tolist(),
-                "low": rmsf["rmsf_low"].tolist(),
-                "high": rmsf["rmsf_high"].tolist(),
-            }
-        with open(af_valid_rmsf_precomputed_path, "w") as f:
-            json.dump(rmsfs, f)
-
-    return rmsfs
-
-    
+from bbflow.data.utils import frames_from_pdb, backbone_to_frames, get_alphaflow_valid_rmsf
 
 class PdbDataModuleBBFlow(LightningDataModule):
     def __init__(self, data_cfg):
@@ -190,38 +141,63 @@ class PDBDatasetBBFlow(Dataset):
         self._init_data()
 
     def _init_data(self):
-        """
-        Preprocess equilibrium structures for training.
-        """
+        """Prepare metadata and lazy cache for equilibrium structures."""
         num_proteins = len(self.csv)
-        max_length = self.csv["modeled_seq_len"].max()
         self.num_proteins = num_proteins
-        self.max_protein_length = max_length
+        if len(self.csv) > 0 and "modeled_seq_len" in self.csv.columns:
+            self.max_protein_length = int(self.csv["modeled_seq_len"].max())
+        else:
+            self.max_protein_length = 0
 
-        self.trans_equilibrium = []
-        self.rotmats_equilibrium = []
-        self.seq_1letter = []
-        self.seq_onehot = []
-        self.protein_length = []
-        self.pdb_names = []
-
-        for i, row in tqdm(self.csv.iterrows(), total=len(self.csv), desc="load eq structures for training"):
-            name = row["name"]
-            protein_folder = row["folder"]
-
-            trans, rotmats, seq_onehot, _ = frames_from_pdb(
-                os.path.join(protein_folder, f"{name}.pdb")
-            )
-            seq = np.array([restypes[i] for i in seq_onehot.argmax(1)])
-
-            self.trans_equilibrium.append(trans)
-            self.rotmats_equilibrium.append(rotmats)
-            self.seq_1letter.append(seq)
-            self.seq_onehot.append(seq_onehot)
-            self.protein_length.append(len(seq_onehot))
-            self.pdb_names.append(name)
+        self.trans_equilibrium = [None] * num_proteins
+        self.rotmats_equilibrium = [None] * num_proteins
+        self.seq_1letter = [None] * num_proteins
+        self.seq_onehot = [None] * num_proteins
+        self.chain_ids = [None] * num_proteins
+        if "modeled_seq_len" in self.csv.columns:
+            self.protein_length = self.csv["modeled_seq_len"].astype(int).tolist()
+        else:
+            self.protein_length = [None] * num_proteins
+        if "name" in self.csv.columns:
+            self.pdb_names = self.csv["name"].tolist()
+        else:
+            self.pdb_names = [None] * num_proteins
+        self._equilibrium_cache = {}
             
+    def _get_eq_structure_atlas(self, pdb_idx):
+        cached = self._equilibrium_cache.get(pdb_idx)
+        if cached is not None:
+            return cached
 
+        row = self.csv.iloc[pdb_idx]
+        name = row["name"]
+        protein_folder = row["folder"]
+
+        trans, rotmats, seq_onehot, chain_ids = frames_from_pdb(
+            os.path.join(protein_folder, f"{name}.pdb")
+        )
+        seq_indices = seq_onehot.argmax(1).tolist()
+        seq_1letter = np.array([restypes[i] for i in seq_indices])
+        protein_len = len(seq_indices)
+
+        data = {
+            "trans": trans,
+            "rotmats": rotmats,
+            "seq_letters": seq_1letter,
+            "seq_onehot": seq_onehot,
+            "length": protein_len,
+            "chain_ids": chain_ids,
+        }
+
+        self.trans_equilibrium[pdb_idx] = trans
+        self.rotmats_equilibrium[pdb_idx] = rotmats
+        self.seq_1letter[pdb_idx] = seq_1letter
+        self.seq_onehot[pdb_idx] = seq_onehot
+        self.chain_ids[pdb_idx] = chain_ids
+        self.protein_length[pdb_idx] = protein_len
+        self._equilibrium_cache[pdb_idx] = data
+
+        return data
 
     def __len__(self):
         return len(self.csv)
@@ -246,18 +222,17 @@ class PDBDatasetBBFlow(Dataset):
         CA_atoms = conformation.xyz[0, conformation.top.select('name CA'), :] * 10
         C_atoms = conformation.xyz[0, conformation.top.select('name C'), :] * 10
 
-        seq = self.seq_1letter[pdb_idx]
+        eq_data = self._get_eq_structure_atlas(pdb_idx)
+        data = backbone_to_frames(N_atoms, CA_atoms, C_atoms, eq_data["seq_letters"])
 
-        data = backbone_to_frames(N_atoms, CA_atoms, C_atoms, seq)
-
-        N = self.protein_length[pdb_idx]
+        N = eq_data["length"]
         in_feats = {
             "res_mask": torch.ones(N),
-            "trans_equilibrium": self.trans_equilibrium[pdb_idx],
-            "rotmats_equilibrium": self.rotmats_equilibrium[pdb_idx],
+            "trans_equilibrium": eq_data["trans"],
+            "rotmats_equilibrium": eq_data["rotmats"],
             "trans_1": data["trans"],
             "rotmats_1": data["rotmats"],
-            "seq": self.seq_onehot[pdb_idx],
+            "seq": eq_data["seq_onehot"],
             "pdb_name": self.pdb_names[pdb_idx],
             "conformation_idx": conformation_idx,
             "trajectory_idx": trajectory_index,

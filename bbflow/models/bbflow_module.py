@@ -16,7 +16,7 @@ import json
 from datetime import datetime
 from pytorch_lightning.utilities import rank_zero_only
 from torch.utils.data.distributed import dist
-import matplotlib.pyplot as plt
+import matplotlib
 import mdtraj
 import warnings
 
@@ -24,6 +24,7 @@ from gafl.analysis import metrics
 from gafl.models.flow_module import FlowModule
 from gafl.data import utils as du
 import gafl.experiment_utils as eu
+from torch.utils.data.distributed import dist
 
 from bbflow.models.bbflow_model import BBFlowModel
 from bbflow.analysis import utils as au
@@ -40,6 +41,14 @@ class BBFlowModule(FlowModule):
             self.reset_epoch = self._exp_cfg.reset_epoch
         else:
             self.reset_epoch = False
+
+        # set samples per valid protein:
+        num_ranks = cfg.experiment.num_devices
+        total_samples_per_valid_prot = self._data_cfg.validation.samples_per_valid_protein
+        self.samples_per_valid_protein_per_rank = total_samples_per_valid_prot // num_ranks
+
+        assert self.samples_per_valid_protein_per_rank % num_ranks == 0, f"Samples per valid protein ({self.samples_per_valid_protein_per_rank}) must be divisible by the number of ranks ({num_ranks})"
+        assert self.samples_per_valid_protein_per_rank > 0
 
 
     def create_model(self):
@@ -70,7 +79,7 @@ class BBFlowModule(FlowModule):
             batch["trans_equilibrium"],
             batch["rotmats_equilibrium"],
             batch["seq"],
-            self._data_cfg.validation.samples_per_valid_protein,
+            self.samples_per_valid_protein_per_rank,
             batch_size,
             self.interpolant,
         )
@@ -92,8 +101,17 @@ class BBFlowModule(FlowModule):
             )
 
 
-    @rank_zero_only
     def on_validation_epoch_end(self):
+        # wait until all ranks finished validation_step
+        if dist.is_initialized() and dist.get_world_size() > 1:
+            dist.barrier()  # wait until all ranks wrote their .npy
+
+        if dist.is_initialized() and dist.get_rank() != 0:
+            return  # only rank 0 continues
+
+        # make image saving faster:
+        matplotlib.use("Agg")   # non-interactive, fast, no GUI needed
+        import matplotlib.pyplot as plt 
 
         folder = os.path.join(
             self._sample_write_dir,

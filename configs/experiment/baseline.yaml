@@ -1,0 +1,6 @@
+defaults:
+  - default
+
+wandb:
+  name: baseline
+  project: bbflow-dev

@@ -29,7 +29,8 @@ slurm_logs/*
 !test_data/test_pdbs/equilibrium.pdb
 !test_data/test_pdbs/short_equilibrium.pdb
 
-!install_utils/
+!install_utils/*.yaml
+!install_utils/*.txt
 !install_utils/install_via_pip.sh
 
 # Byte-compiled / optimized / DLL files

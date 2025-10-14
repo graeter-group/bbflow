@@ -7,10 +7,14 @@ import os
 import GPUtil
 import torch
 
+# import torch.multiprocessing as mp
+# mp.set_start_method('spawn', force=True)
+
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
 # Pytorch lightning imports
+import pytorch_lightning as pl
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.trainer import Trainer
@@ -22,6 +26,8 @@ from gafl import experiment_utils as eu
 
 from bbflow.models.bbflow_module import BBFlowModule
 from bbflow.data.pdb_dataloader_bbflow import PdbDataModuleBBFlow
+
+from packaging import version
 
 
 log = eu.get_pylogger(__name__)
@@ -82,18 +88,28 @@ class Experiment:
             if self._exp_cfg.use_wandb and isinstance(logger.experiment.config, wandb.sdk.wandb_config.Config):
                 logger.experiment.config.update(flat_cfg)
 
-        devices = GPUtil.getAvailable(order='memory', limit = 8)[:self._exp_cfg.num_devices]
+        devices = GPUtil.getAvailable(order='first', limit = 8)[:self._exp_cfg.num_devices]
         device_names = [torch.cuda.get_device_name(i) for i in devices]
         log.info(f"Using devices: {devices} ({device_names})")
 
-        trainer = Trainer(
+        trainer_kwargs = dict(
             **self._exp_cfg.trainer,
             callbacks=callbacks,
             logger=logger,
-            replace_sampler_ddp=False, # in later versions of pytorch lightning, this is called use_distributed_sampler
             enable_progress_bar=self._exp_cfg.use_tqdm,
             enable_model_summary=True,
             devices=devices,
+        )
+
+        # the `replace_sampler_ddp` flag is deprecated in newer versions of PL
+        PL_VERSION = version.parse(pl.__version__)
+        if PL_VERSION >= version.parse("2.3.0"):
+            trainer_kwargs["use_distributed_sampler"] = False
+        else:
+            trainer_kwargs["replace_sampler_ddp"] = False
+
+        trainer = Trainer(
+            **trainer_kwargs
         )
         trainer.fit(
             model=self._model,

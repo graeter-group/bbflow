@@ -1,9 +1,9 @@
 debug: False
 use_wandb: True
-use_tqdm: False
+use_tqdm: True
 
 seed: 123
-num_devices: 2
+num_devices: 1
 warm_start: null
 warm_start_cfg_override: True
 use_swa: False

@@ -19,7 +19,7 @@ trans:
   train_schedule: linear
   sample_schedule: linear
 sampling:
-  num_timesteps: 100
+  num_timesteps: 20
 self_condition: ${model.edge_features.self_condition}
 noise_res_scaling_power: 0.0
 noise_scale: 1.

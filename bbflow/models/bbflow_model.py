@@ -15,6 +15,32 @@ from gafl.models.gafl.cfa import GeometricFrameAttention, Linear, BackboneUpdate
 from bbflow.models.embedder import Embedder
 
 
+from omegaconf import DictConfig, OmegaConf
+from omegaconf.base import ContainerMetadata
+# depending on the torch version (higher than 2.6), we need to add the DictConfig and ContainerMetadata to the safe globals:
+import torch
+import builtins
+from typing import Any
+from collections import defaultdict
+from omegaconf import DictConfig, OmegaConf, ListConfig
+from omegaconf.nodes import AnyNode
+from omegaconf.base import ContainerMetadata, Metadata
+
+# depending on the torch version (>=2.6), we need to add all types the checkpoint asked for
+if hasattr(torch.serialization, "add_safe_globals"):
+    torch.serialization.add_safe_globals([
+        (Any, "typing.Any"),
+        (defaultdict, "collections.defaultdict"),
+        (DictConfig, "omegaconf.dictconfig.DictConfig"),
+        (ListConfig, "omegaconf.listconfig.ListConfig"),
+        (AnyNode, "omegaconf.nodes.AnyNode"),
+        (ContainerMetadata, "omegaconf.base.ContainerMetadata"),
+        (Metadata, "omegaconf.base.Metadata"),
+        (builtins.dict, "builtins.dict"),
+        (builtins.int, "builtins.int"),
+        (builtins.list, "builtins.list"),
+    ])
+
 
 class BBFlowModel(nn.Module):
 

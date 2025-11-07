@@ -10,7 +10,7 @@ import copy
 import os
 from scipy.optimize import linear_sum_assignment
 from sklearn.metrics import pairwise_distances
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import pandas as pd
 import logging
 from torch.utils.data.distributed import dist
@@ -223,7 +223,12 @@ class InterpolantBBFlow(Interpolant):
         # prot_traj_with_layers = []
         clean_traj = []
         if self._cfg.use_tqdm:
-            iterator = tqdm(ts[1:], leave=False, desc=f'Sampling {num_batch} proteins of length {num_res}, rank {dist.get_rank()}')
+            iterator = tqdm(
+                ts[1:],
+                leave=False,
+                desc=f'Sampl. {num_batch} states, len {num_res}, rank {dist.get_rank()} - timesteps'
+            )
+
         else:
             iterator = ts[1:]
         for t_2 in iterator:

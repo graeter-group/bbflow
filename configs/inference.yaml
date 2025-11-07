@@ -13,7 +13,7 @@ inference:
   # Use this to write with date-time stamp.
   name: run_${now:%Y-%m-%d}_${now:%H-%M}
   seed: 123
-  ckpt_path: outputs/ckpt/frameflow/published.ckpt
+  ckpt_path: models/bbflow-mini-0.1/bbflow-mini-0.1.ckpt
   output_dir: outputs/inference/
   use_ckpt_name_in_outpath: True
 
@@ -21,10 +21,11 @@ inference:
   num_gpus: 1
 
   use_tqdm: True
-  log_times: True
+  log_times: False
 
-  csv_path: null
+  csv_path: ./dataset_csv/test/ATLAS_test.csv
   sort: False
+  num_proteins: null # null = all proteins
 
   min_length: null # null = no lower limit
   max_length: null # null = no upper limit

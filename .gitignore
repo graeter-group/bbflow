@@ -18,6 +18,7 @@ preprocessed/
 datasets/
 dataset/
 
+
 *.png
 !**/requirements.txt
 
@@ -26,8 +27,6 @@ job.sh
 slurm_logs/*
 *.csv
 
-!test_data/test_pdbs/equilibrium.pdb
-!test_data/test_pdbs/short_equilibrium.pdb
 
 !install_utils/*.yaml
 !install_utils/*.txt
@@ -96,7 +95,10 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+test_data/test_pdbs/*
 !test_data/test_pdbs/equilibrium.pdb
+!test_data/test_pdbs/short_equilibrium.pdb
+!test_data/test_pdbs/MD_trajectory.xtc
 
 # Flask stuff:
 instance/
@@ -217,6 +219,10 @@ run_training/
 
 scripts/logs/
 results/
+
+dataset_csv/*
+!dataset_csv/ATLAS_split/
+!dataset_csv/ATLAS_split/*.csv
 
 # exclude .sh and .csv in scripts from gitignore:
 !scripts/*.sh

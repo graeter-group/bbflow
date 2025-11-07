@@ -37,7 +37,10 @@ class Sampler:
             cfg: inference config.
         """
         ckpt_path = cfg.inference.ckpt_path
+        assert os.path.isfile(ckpt_path), f'Checkpoint path {ckpt_path} does not exist!'
         ckpt_dir = os.path.dirname(ckpt_path)
+        cfg_path = os.path.join(ckpt_dir, 'config.yaml')
+        assert os.path.isfile(cfg_path), f'Config file {cfg_path} does not exist!'
         ckpt_cfg = OmegaConf.load(os.path.join(ckpt_dir, 'config.yaml'))
 
         # Set-up config.
@@ -71,13 +74,11 @@ class Sampler:
                 self._infer_cfg.name,
             )
         os.makedirs(self._output_dir, exist_ok=True)
-        log.info(f'Saving results to {self._output_dir}')
         config_path = os.path.join(self._output_dir, 'config.yaml')
         with open(config_path, 'w') as f:
             OmegaConf.save(config=self._cfg, f=f)
         log.info(f'Saving inference config to {config_path}')
 
-        # Read checkpoint and initialize module.
         self._flow_module = self.load_module(ckpt_path)
         self._flow_module.eval()
         self._flow_module._infer_cfg = self._infer_cfg
@@ -102,6 +103,12 @@ class Sampler:
         
         if self._infer_cfg.csv_path is not None:
             csv = pd.read_csv(self._infer_cfg.csv_path)
+            # randomly subsample proteins if num_proteins is set
+            if self._infer_cfg.num_proteins is not None:
+                csv = csv.sample(
+                    n=self._infer_cfg.num_proteins,
+                    random_state=self._infer_cfg.seed,
+                ).reset_index(drop=True)
             dataset = PDBDatasetBBFlowFromPdb(
                 csv, 
                 sort=self._infer_cfg.sort,
@@ -128,6 +135,11 @@ class Sampler:
             devices=devices,
             enable_progress_bar=self._infer_cfg.use_tqdm,
         )
+
+        hashtagline = '#' * 80
+        log.info(f'\n\n{hashtagline}\n'
+                 f'Starting inference run: {self._infer_cfg.name}\nSaving results to {self._output_dir}\n{hashtagline}\n')
+        
         trainer.predict(self._flow_module, dataloaders=dataloader)
 
 

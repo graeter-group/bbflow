@@ -34,3 +34,20 @@ bbflow_sampler.sample(
 
 
 # %%
+# Analyze the generated ensemble against the reference MD trajectory
+from scripts.analysis_script import calc_metrics
+
+calc_metrics(
+    paths=[
+        (
+            "test_data/test_pdbs/ensemble.pdb",
+            "test_data/test_pdbs/equilibrium.pdb",
+            "test_data/test_pdbs/MD_trajectory.xtc",
+        )
+    ],
+    print_metrics=True,
+    analysis_data_path="test_data/test_pdbs/analysis_data.pkl",
+    analysis_metrics_path="test_data/test_pdbs/metrics_summary.csv",
+    num_workers=1,
+)
+

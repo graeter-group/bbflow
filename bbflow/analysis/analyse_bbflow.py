@@ -23,6 +23,8 @@ import time
 
 
 def _correlations(a, b, correlation_type="pearson"):
+    if a.shape[0] == 1 or b.shape[0] == 1:
+        return np.nan
     if correlation_type == "pearson":
         return scipy.stats.pearsonr(a, b)[0]
     elif correlation_type == "spearman":
@@ -122,11 +124,23 @@ def _calc_rmsd(ref_traj_1, ref_traj_2, model_traj):
         'rmsd_time_elapsed': (datetime.now() - time_start).total_seconds(),
     }
 
+def _center_coordinates(traj: mdtraj.Trajectory):
+    """
+    mdtraj's parallel centering function might cause problems with multiprocessing.
+    """
+    means = np.mean(traj.xyz.astype(np.float64), axis=1, keepdims=True)
+    traj.xyz -= means
+    traces = np.sum(traj.xyz**2, axis=(1,2))
+    traj._rmsd_traces = traces
+    return traj
+
 def _rmsf_bootstrap(trajs, indices):
     # rmsf changes the trajectory inplace, so we need to clone it
     a = mdtraj.Trajectory(trajs[0].xyz.copy(), trajs[0].top)
     b = mdtraj.Trajectory(trajs[1].xyz.copy(), trajs[1].top)
-    return mdtraj.rmsf(a[indices], b) * 10
+    a = _center_coordinates(a)
+    b = _center_coordinates(b)
+    return mdtraj.rmsf(a[indices], b, parallel=False, precentered=True) * 10
 
 def _calc_rmsf(traj, ref, bootstrap=False):
     # print("Calculating RMSF")
@@ -140,7 +154,9 @@ def _calc_rmsf(traj, ref, bootstrap=False):
             'rmsf_high': high,
         }
     else:
-        return mdtraj.rmsf(traj, ref) * 10
+        traj = _center_coordinates(traj)
+        ref = _center_coordinates(ref)
+        return mdtraj.rmsf(traj, ref, parallel=False, precentered=True) * 10
 
 def _calc_dccm(ref_traj, model_traj):
     # print("Calculating DCCM")
@@ -320,32 +336,55 @@ def _bootstrap(func, data, n_samples, n_iterations=100, alpha=0.05):
 
 def _load_model_traj(name, pdbdirs):
     model_traj_aa = None
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        for pdbdir in pdbdirs:
-            if os.path.exists(f'{pdbdir}/{name}/sampled_conformations.pdb'):
-                model_traj_aa = mdtraj.load(f'{pdbdir}/{name}/sampled_conformations.pdb')
-            elif os.path.exists(f'{pdbdir}/{name[:4]}_{name[4]}.pdb'):
-                model_traj_aa = mdtraj.load(f'{pdbdir}/{name[:4]}_{name[4]}.pdb')
-            elif os.path.exists(f'{pdbdir}/{name}.pdb'):
-                model_traj_aa = mdtraj.load(f'{pdbdir}/{name}.pdb')
-    if model_traj_aa is None:
-        print(f"No model samples found for {name}")
+    if isinstance(name, (tuple, list)):
+        model_traj_path = name[0]
+        if not os.path.exists(model_traj_path):
+            warnings.warn(f"Expected model trajectory path {model_traj_path} does not exist. Skipping...")
+            return None
+        model_traj_aa = mdtraj.load(model_traj_path)
+
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for pdbdir in pdbdirs:
+                if os.path.exists(f'{pdbdir}/{name}/sampled_conformations.pdb'):
+                    model_traj_aa = mdtraj.load(f'{pdbdir}/{name}/sampled_conformations.pdb')
+                elif len(name) == 5 and os.path.exists(f'{pdbdir}/{name[:4]}_{name[4]}.pdb'):
+                    model_traj_aa = mdtraj.load(f'{pdbdir}/{name[:4]}_{name[4]}.pdb')
+                elif os.path.exists(f'{pdbdir}/{name}.pdb'):
+                    model_traj_aa = mdtraj.load(f'{pdbdir}/{name}.pdb')
+        if model_traj_aa is None:
+            warnings.warn(f"No model samples found for {name} in {pdbdirs}. Skipping...")
+
     return model_traj_aa
 
 def _load_ref_traj_full(name, reference_dirs, n_confs):
     # print(f"Loading {name}")
     ref_aa = ref_traj_aa = None
-    for reference_dir in reference_dirs:
-        if not os.path.exists(f'{reference_dir}/{name}/{name}.pdb'):
-            continue
-        ref_aa = mdtraj.load(f'{reference_dir}/{name}/{name}.pdb')
-        topfile = f'{reference_dir}/{name}/{name}.pdb'
-        ref_traj_aa = mdtraj.load(f'{reference_dir}/{name}/{name}_R1.xtc', top=topfile) \
-            + mdtraj.load(f'{reference_dir}/{name}/{name}_R2.xtc', top=topfile) \
-            + mdtraj.load(f'{reference_dir}/{name}/{name}_R3.xtc', top=topfile)
+    if isinstance(name, (tuple, list)):
+        if not all(os.path.exists(p) for p in name[1:]):
+            warnings.warn(f"Expected reference trajectory paths {name[1:]} do not all exist. Skipping...")
+            return None, None, None
+        topfile = name[1]
+        ref_traj_pahts = name[2:]
+        ref_aa = mdtraj.load(topfile)
+        ref_traj_aa = mdtraj.load(ref_traj_pahts[0], top=topfile)
+        for path in ref_traj_pahts[1:]:
+            ref_traj_aa += mdtraj.load(path, top=topfile)
+
+    else:
+        for reference_dir in reference_dirs:
+            if not os.path.exists(f'{reference_dir}/{name}/{name}.pdb'):
+                continue
+            ref_aa = mdtraj.load(f'{reference_dir}/{name}/{name}.pdb')
+            topfile = f'{reference_dir}/{name}/{name}.pdb'
+            ref_traj_aa = mdtraj.load(f'{reference_dir}/{name}/{name}_R1.xtc', top=topfile) \
+                + mdtraj.load(f'{reference_dir}/{name}/{name}_R2.xtc', top=topfile) \
+                + mdtraj.load(f'{reference_dir}/{name}/{name}_R3.xtc', top=topfile)
+    
     if ref_aa is None or ref_traj_aa is None:
-        print(f"No reference trajectory found for {name}")
+        warnings.warn(f"No reference trajectory found for {name} in {reference_dirs}. Skipping...")
+        return None, None, None
     
     RAND1 = np.random.randint(0, ref_traj_aa.n_frames, n_confs)
     RAND2 = np.random.randint(0, ref_traj_aa.n_frames, n_confs)
@@ -415,8 +454,8 @@ def _slice_and_superpose(ref_aa, ref_traj_aa, model_traj_aa):
     ref_aa.atom_slice(refmask, True)
     model_traj_aa.atom_slice(modelmask, True)
 
-    ref_traj_aa.superpose(ref_aa)
-    model_traj_aa.superpose(ref_aa)
+    ref_traj_aa.superpose(ref_aa, parallel=False)
+    model_traj_aa.superpose(ref_aa, parallel=False)
 
     ca_mask = [a.index for a in ref_traj_aa.top.atoms if a.name == 'CA']
     ca_mask_model = [a.index for a in model_traj_aa.top.atoms if a.name == 'CA']
@@ -424,8 +463,8 @@ def _slice_and_superpose(ref_aa, ref_traj_aa, model_traj_aa):
     ref = ref_aa.atom_slice(ca_mask, False)
     model_traj = model_traj_aa.atom_slice(ca_mask_model, False)
     
-    ref_traj.superpose(ref)
-    model_traj.superpose(ref)
+    ref_traj.superpose(ref, parallel=False)
+    model_traj.superpose(ref, parallel=False)
 
     slice_superpose_time_elapsed = (datetime.now() - time_start).total_seconds()
 
@@ -482,6 +521,11 @@ def _calc_metrics(
         out["ref_rmsf"] = _calc_rmsf(ref_traj_cloned, ref_cloned, bootstrap=False)
         out["model_rmsf"] = _calc_rmsf(model_traj_cloned, ref_cloned, bootstrap=False)
 
+        out['rmsf_time_elapsed'] = (datetime.now() - time_start).total_seconds()
+
+    if metrics_subset is None or "BB-RMSF" in metrics_subset:
+        time_start = datetime.now()
+
         # rmsf on backbone and full reference trajectory for analysis
         ref_traj_cloned = mdtraj.Trajectory(ref_traj_aa.xyz.copy(), ref_traj_aa.top)
         model_traj_cloned = mdtraj.Trajectory(model_traj_aa.xyz.copy(), model_traj_aa.top)
@@ -489,7 +533,7 @@ def _calc_metrics(
         out["BB_ref_rmsf"] = _calc_rmsf(ref_traj_cloned, ref_cloned, bootstrap=False)
         out["BB_model_rmsf"] = _calc_rmsf(model_traj_cloned, ref_cloned, bootstrap=False)
 
-        out['rmsf_time_elapsed'] = (datetime.now() - time_start).total_seconds()
+        out['bb_rmsf_time_elapsed'] = (datetime.now() - time_start).total_seconds()
 
     if metrics_subset is None or "DCCM" in metrics_subset:
         out.update(_calc_dccm(ref_traj, model_traj))
@@ -551,10 +595,14 @@ def _calc_metrics_bootstrap(
     time_start = datetime.now()
     # load reference and model trajectories
     model_traj_aa = load_model_fn(name, pdbdirs)
+    if model_traj_aa is None:
+        return name, None
     ref_aa, ref_traj_aa, rand_indices = load_ref_fn(
         name, reference_dirs, 
         model_traj_aa.n_frames if num_conformations is None else num_conformations
     )
+    if ref_aa is None or ref_traj_aa is None:
+        return name, None
     loading_traj_time_elapsed = (datetime.now() - time_start).total_seconds()
     RAND1, RAND2, RAND1K = rand_indices
 
@@ -636,6 +684,7 @@ def _analyze_data(data, metrics_subset=None):
             "ref": np.concatenate([data[name]['ref_rmsf'] for name in data]),
             "model": np.concatenate([data[name]['model_rmsf'] for name in data]),
         }
+    if metrics_subset is None or "BB-RMSF" in metrics_subset:
         concatenated_lists["BB_rmsf"] = {
             "ref": np.concatenate([data[name]['BB_ref_rmsf'] for name in data]),
             "model": np.concatenate([data[name]['BB_model_rmsf'] for name in data]),
@@ -679,6 +728,9 @@ def _analyze_data(data, metrics_subset=None):
             )
             item["per_target_rmsf_mae"] = np.abs(out['model_rmsf'] - out['ref_rmsf']).mean()
             item["per_target_rmsf_rmse"] = np.sqrt(((out['model_rmsf'] - out['ref_rmsf']) ** 2).mean())
+            item["rmsf_time_elapsed"] = out['rmsf_time_elapsed']
+
+        if metrics_subset is None or "BB-RMSF" in metrics_subset:
             item["per_target_rmsf_corr_bb"] = _correlations(
                 out['BB_model_rmsf'],
                 out['BB_ref_rmsf'], 
@@ -751,7 +803,7 @@ def _analyze_data(data, metrics_subset=None):
         metrics_dict["Pairwise RMSD"] = df.model_pairwise_rmsd.median()
         metrics_dict["MD pairwise RMSD mean"] = df.md_pairwise_rmsd.mean()
         metrics_dict["Pairwise RMSD mean"] = df.model_pairwise_rmsd.mean()
-        metrics_dict["Pairwise RMSD r"] = scipy.stats.pearsonr(df.md_pairwise_rmsd, df.model_pairwise_rmsd)[0]
+        metrics_dict["Pairwise RMSD r"] = _correlations(df.md_pairwise_rmsd, df.model_pairwise_rmsd, "pearson")
         metrics_dict["Pairwise RMSD MAE"] = np.abs(df.md_pairwise_rmsd - df.model_pairwise_rmsd).mean()
         metrics_dict["Pairwise RMSD RMSE"] = np.sqrt(((df.md_pairwise_rmsd - df.model_pairwise_rmsd) ** 2).mean())
         metrics_dict["Pairwise RMSD MAE max"] = np.abs(df.md_pairwise_rmsd - df.model_pairwise_rmsd).max()
@@ -762,7 +814,7 @@ def _analyze_data(data, metrics_subset=None):
         metrics_dict["RMSF"] = np.median(concatenated_lists["rmsf"]["model"])
         metrics_dict["MD RMSF mean"] = np.mean(concatenated_lists["rmsf"]["ref"])
         metrics_dict["RMSF mean"] = np.mean(concatenated_lists["rmsf"]["model"])
-        metrics_dict["Global RMSF r"] = scipy.stats.pearsonr(concatenated_lists["rmsf"]["ref"], concatenated_lists["rmsf"]["model"])[0]
+        metrics_dict["Global RMSF r"] = _correlations(concatenated_lists["rmsf"]["ref"], concatenated_lists["rmsf"]["model"], "pearson")
         metrics_dict["Global RMSF MAE"] = np.abs(concatenated_lists["rmsf"]["ref"] - concatenated_lists["rmsf"]["model"]).mean()
         metrics_dict["Global RMSF RMSE"] = np.sqrt(((concatenated_lists["rmsf"]["ref"] - concatenated_lists["rmsf"]["model"]) ** 2).mean())
         metrics_dict["Per target RMSF r"] = df.per_target_rmsf_corr.median()
@@ -775,11 +827,12 @@ def _analyze_data(data, metrics_subset=None):
         metrics_dict["Per target RMSF RMSE mean"] = df.per_target_rmsf_rmse.mean()
         metrics_dict["Per target RMSF RMSE max"] = df.per_target_rmsf_rmse.max()
 
+    if metrics_subset is None or "BB-RMSF" in metrics_subset:
         metrics_dict["MD BB-RMSF"] = np.median(concatenated_lists["BB_rmsf"]["ref"])
         metrics_dict["BB-RMSF"] = np.median(concatenated_lists["BB_rmsf"]["model"])
         metrics_dict["MD BB-RMSF mean"] = np.mean(concatenated_lists["BB_rmsf"]["ref"])
         metrics_dict["BB-RMSF mean"] = np.mean(concatenated_lists["BB_rmsf"]["model"])
-        metrics_dict["Global BB-RMSF r"] = scipy.stats.pearsonr(concatenated_lists["BB_rmsf"]["ref"], concatenated_lists["BB_rmsf"]["model"])[0]
+        metrics_dict["Global BB-RMSF r"] = _correlations(concatenated_lists["BB_rmsf"]["ref"], concatenated_lists["BB_rmsf"]["model"], "pearson")
         metrics_dict["Global BB-RMSF MAE"] = np.abs(concatenated_lists["BB_rmsf"]["ref"] - concatenated_lists["BB_rmsf"]["model"]).mean()
         metrics_dict["Global BB-RMSF RMSE"] = np.sqrt(((concatenated_lists["BB_rmsf"]["ref"] - concatenated_lists["BB_rmsf"]["model"]) ** 2).mean())
         metrics_dict["Per target BB-RMSF r"] = df.per_target_rmsf_corr_bb.median()
@@ -797,7 +850,7 @@ def _analyze_data(data, metrics_subset=None):
         metrics_dict["DCCM"] = np.median(concatenated_lists["dccm"]["model"])
         metrics_dict["MD DCCM mean"] = np.mean(concatenated_lists["dccm"]["ref"])
         metrics_dict["DCCM mean"] = np.mean(concatenated_lists["dccm"]["model"])
-        metrics_dict["Global DCCM r"] = scipy.stats.pearsonr(concatenated_lists["dccm"]["ref"], concatenated_lists["dccm"]["model"])[0]
+        metrics_dict["Global DCCM r"] = _correlations(concatenated_lists["dccm"]["ref"], concatenated_lists["dccm"]["model"], "pearson")
         metrics_dict["Global DCCM MAE"] = np.abs(concatenated_lists["dccm"]["ref"] - concatenated_lists["dccm"]["model"]).mean()
         metrics_dict["Global DCCM RMSE"] = np.sqrt(((concatenated_lists["dccm"]["ref"] - concatenated_lists["dccm"]["model"]) ** 2).mean())
         metrics_dict["Per target DCCM r"] = df.per_target_dccm_corr.median()
@@ -908,6 +961,9 @@ def calc_metrics(
     if num_workers > 1:
         p.__exit__(None, None, None)
 
+    out = {k: v for k, v in out.items() if v is not None}
+    if len(out) == 0:
+        raise ValueError("No valid trajectories were loaded.")
     
     if num_bootstrap_samples == 1:
         metrics_dict = _analyze_data(out, metrics_subset)

@@ -3,8 +3,8 @@ node_embed_size: 240
 edge_embed_size: 120
 
 embed:
-  index_embed_type: "full"
-  index_embed_dim: 128
+  index_embed_type: null # null, "full", or "neighbor"
+  index_embed_dim: 0
   time_embed_dim: 128
   embed_aatype: True
   aatype_embed_dim: 128
@@ -14,26 +14,11 @@ embed:
   min_bin_distance: 1e-5
   max_bin_distance: 20.0
   embed_distogram: True
-  embed_direction: False
-  embed_direction_cutoff: null # cutoff in Angstrom, null means no cutoff. Only used if embed_direction is True
+  embed_direction: True
+  embed_direction_cutoff: 5 # cutoff in Angstrom, null means no cutoff. Only used if embed_direction is True
 
-node_features:
-  c_s: ${model.node_embed_size}
-  c_pos_emb: 120
-  c_timestep_emb: 120
-  embed_diffuse_mask: False
-  max_num_res: 2000
-  timestep_int: 1000
 
 edge_features:
-  single_bias_transition_n: 2
-  c_s: ${model.node_embed_size}
-  c_p: ${model.edge_embed_size}
-  relpos_k: 64
-  use_rbf: True
-  num_rbf: 32
-  feat_dim: 64
-  num_bins: 22
   self_condition: True
 
 gfa:

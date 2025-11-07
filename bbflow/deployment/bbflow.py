@@ -13,15 +13,15 @@ from typing import Optional
 from pathlib import Path
 import pandas as pd
 from pytorch_lightning import Trainer
-from omegaconf import DictConfig, OmegaConf
-from omegaconf.base import ContainerMetadata
 import warnings
 import logging
 from typing import Union
 from pathlib import Path
 from tqdm.auto import tqdm
 
-# depending on the torch version (higher than 2.x), we need to add the DictConfig and ContainerMetadata to the safe globals:
+from omegaconf import DictConfig, OmegaConf
+from omegaconf.base import ContainerMetadata
+# depending on the torch version (higher than 2.6), we need to add the DictConfig and ContainerMetadata to the safe globals:
 if hasattr(torch.serialization, 'add_safe_globals'):
     torch.serialization.add_safe_globals([DictConfig, ContainerMetadata]) # needed for loading the checkpoint with weights_only=True
 

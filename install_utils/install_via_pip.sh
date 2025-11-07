@@ -2,7 +2,7 @@ TORCH_VERSION=${1:-"2.6.0"}
 CUDA_VERSION=${2:-"124"}
 PYTHON_VERSION=${3:-"None"}
 
-BBFLOW_DIR="bbflow"
+BBFLOW_DIR="bbflow-dev"
 
 SUPPORTED_VERSIONS=("3.10" "3.12" "None")
 # assert that python version is either 3.10, 3.12 or None:

@@ -134,6 +134,14 @@ def main(cfg: DictConfig):
         OmegaConf.set_struct(cfg.model, True)
         log.info(f'Loaded warm start config from {warm_start_cfg_path}')
 
+    # Ensure that all processes write to the same output directory.
+    if int(os.environ.get("LOCAL_RANK", 0)) == 0:
+        base_output_dir = cfg.experiment.checkpointer.dirpath
+    else:
+        base_output_dir = os.environ.get("HYDRA_OUTPUT_DIR", cfg.experiment.checkpointer.dirpath)
+    os.environ['HYDRA_OUTPUT_DIR'] = base_output_dir
+    cfg.experiment.checkpointer.dirpath = base_output_dir
+
     exp = Experiment(cfg=cfg)
     exp.train()
 

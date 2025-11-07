@@ -4,15 +4,15 @@ dataset:
   max_num_res: 750
   subset: null
   split_path: ${experiment.checkpointer.dirpath}
-  train_csv_path: ./datasets/BBFlow/train/ATLAS_train.csv
+  train_csv_path: ./dataset_csv/train/ATLAS_train.csv
   valid_csv_paths: [
-    ./datasets/BBFlow/validation/ATLAS_valid.csv,
+    ./dataset_csv/validation/ATLAS_validation.csv,
   ]
   valid_dataset_names: [
-    ATLAS_valid,
+    ATLAS_validation,
   ]
   
-  test_csv_path: ./datasets/BBFlow/test/ATLAS_test.csv
+  test_csv_path: ./dataset_csv/test/ATLAS_test.csv
   
 
 validation:
@@ -20,7 +20,7 @@ validation:
 
   # must contain a folder for each valid protein with the equilibrium pdb and xtc files
   valid_xtc_paths: [
-    ./datasets/ATLAS/ATLAS_xtc/,
+    ./datasets/ATLAS/,
   ]
   # Folders with ensembles for the validation set proteins using AlphaFlow.
   # Used in validation for plotting.
@@ -39,4 +39,4 @@ sampler:
   max_batch_size: 100
   max_num_res_squared: 200_000
   max_conformations: 20 # max_conformations per epoch. Chooses randomly from all conformations each epoch
-  random_conf_as_condition: false # if false, use equilibrium structure
+  

@@ -31,6 +31,12 @@ from bbflow.analysis import utils as au
 from bbflow.analysis.analyse_bbflow import calc_metrics
 from bbflow.data.interpolant_bbflow import InterpolantBBFlow
 
+# depending on the torch version (higher than 2.6), we need to add the DictConfig and ContainerMetadata to the safe globals:
+from omegaconf import DictConfig, OmegaConf
+from omegaconf.base import ContainerMetadata
+if hasattr(torch.serialization, 'add_safe_globals'):
+    torch.serialization.add_safe_globals([DictConfig, ContainerMetadata]) # needed for loading the checkpoint with weights_only=True
+
 
 class BBFlowModule(FlowModule):
 
@@ -119,7 +125,7 @@ class BBFlowModule(FlowModule):
         )
         valid_csv_path = os.path.join(self._sample_write_dir, 'valid.csv')
         valid_csv = pd.read_csv(valid_csv_path)
-        all_pdb_names = valid_csv['pdb_name'].values
+        all_pdb_names = valid_csv['name'].values if 'name' in valid_csv else valid_csv['pdb_name'].values
         pdb_names = []
         if dist.get_world_size() > 1:
             # combine samples that are saved in npy files into one pdb file

@@ -260,7 +260,7 @@ class PDBDatasetBBFlowFromPdb(Dataset):
         lengths = []
         for i, row in self.csv.iterrows():
             pdb_path = row['pdb_path']
-            pdb_name = row['pdb_name']
+            pdb_name = row['name'] if 'name' in row else row['pdb_name']
 
             trans, rotmats, seq_onehot, _ = frames_from_pdb(pdb_path)
 

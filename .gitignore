@@ -27,6 +27,12 @@ job.sh
 slurm_logs/*
 *.csv
 
+<<<<<<< HEAD
+!test_data/test_pdbs/equilibrium.pdb
+!test_data/test_pdbs/short_equilibrium.pdb
+!test_data/test_pdbs/multimer.pdb
+=======
+>>>>>>> 27362ad6837d5bccfee45c153d34bc7c4ce84241
 
 !install_utils/*.yaml
 !install_utils/*.txt

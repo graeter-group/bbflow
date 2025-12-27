@@ -103,6 +103,9 @@ class BBFlow:
         self._infer_cfg = cfg.inference
         self._samples_cfg = self._infer_cfg.samples
 
+        # set the number of devices to 1:
+        self._cfg.experiment.num_devices = 1
+
         self._progress_bar = progress_bar
 
         # Read checkpoint and initialize module.

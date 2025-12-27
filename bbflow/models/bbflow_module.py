@@ -53,7 +53,7 @@ class BBFlowModule(FlowModule):
         total_samples_per_valid_prot = self._data_cfg.validation.samples_per_valid_protein
         self.samples_per_valid_protein_per_rank = total_samples_per_valid_prot // num_ranks
 
-        assert self.samples_per_valid_protein_per_rank % num_ranks == 0, f"Samples per valid protein ({self.samples_per_valid_protein_per_rank}) must be divisible by the number of ranks ({num_ranks})"
+        assert total_samples_per_valid_prot % num_ranks == 0, f"Samples per valid protein ({self.samples_per_valid_protein_per_rank}) must be divisible by the number of ranks ({num_ranks}), set by the coinfig parameter experiment.num_devices."
         assert self.samples_per_valid_protein_per_rank > 0
 
 

@@ -1,4 +1,7 @@
+# THIS SCRIPT USES A LIGHTWEIGHT EXAMPLE MODEL FOR DEMONSTRATION. TO OBTAIN GOOD ENSEMBLES, CHANGE THE MODEL TAG TO 'LATEST' BELOW.
+
 #%%
+
 from bbflow.deployment.bbflow import BBFlow
 from pathlib import Path
 

@@ -154,6 +154,7 @@ def _sample():
         "gamma_rots": args.gamma_rots,
         "gamma_trans": args.gamma_trans,
         "progress_bar": not args.hide_progbar,
+        "device": args.device,
     }
 
     sample_kwargs = {
@@ -161,7 +162,6 @@ def _sample():
         "batch_size": args.batch_size,
         "cuda_memory_GB": args.cuda_memory_GB,
         "overwrite": not args.no_overwrite,
-        "device": args.device,
     }
 
     if not args.hide_progbar:

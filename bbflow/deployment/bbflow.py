@@ -40,7 +40,7 @@ torch.set_float32_matmul_precision('high')
 
 class BBFlow:
 
-    def __init__(self, ckpt_path: Union[Path,str], cfg:dict={}, timesteps:int=20, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}):
+    def __init__(self, ckpt_path: Union[Path,str], cfg:dict={}, timesteps:int=20, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}, device:str='cuda'):
         """
         Arguments:
         ckpt_path: Path or str. Path to checkpoint file. Must contain a 'config.yaml' file in the same directory.
@@ -49,7 +49,12 @@ class BBFlow:
         gamma_trans: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
         gamma_rots: float or None. default:None. Conditional prior parameter controlling how close the prior is to the equilibrium structure. Overwrites the configuration from the checkpoint or in cfg.
         progress_bar: bool. default:True. Whether to show a progress bar during sampling.
+        _pbar_kwargs: dict. default:{} Additional arguments to pass to the progress bar.
+        device: str. default:'cuda'. Device to use.
         """
+
+        self.device = device
+
         ckpt_dir = os.path.dirname(ckpt_path)
         config_path = os.path.join(ckpt_dir, 'config.yaml')
         if not os.path.exists(ckpt_path):
@@ -115,7 +120,7 @@ class BBFlow:
         self._flow_module._samples_cfg = self._samples_cfg
 
     @classmethod
-    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=20, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}, force_download:bool=False):
+    def from_tag(cls, tag:str='latest', cfg:dict={}, timesteps:int=20, gamma_trans:float=None, gamma_rots:float=None, progress_bar:bool=True, _pbar_kwargs={}, force_download:bool=False, device:str='cuda'):
         """
         Arguments:
         tag: str. Tag of the checkpoint to load. Searches the checkpoint at models/{tag}/*.ckpt. If not present, tries to download it.
@@ -126,31 +131,33 @@ class BBFlow:
         progress_bar: bool. default:True. Whether to show a progress bar during sampling.
         _pbar_kwargs: dict. default:{} Additional arguments to pass to the progress bar.
         force_download: bool. default:False. If True, forces the download of the checkpoint even if it is already present.
+        device: str. default:'cuda'. Device to use.
         """
         ckpt_path = ckpt_path_from_tag(tag, force_download=force_download)
-        return cls(ckpt_path, cfg=cfg, timesteps=timesteps, gamma_trans=gamma_trans, gamma_rots=gamma_rots, progress_bar=progress_bar, _pbar_kwargs=_pbar_kwargs)
+        return cls(ckpt_path, cfg=cfg, timesteps=timesteps, gamma_trans=gamma_trans, gamma_rots=gamma_rots, progress_bar=progress_bar, _pbar_kwargs=_pbar_kwargs, device=device)
 
     def load_module(self, ckpt_path):
-        ckpt = torch.load(ckpt_path, map_location='cuda', weights_only=True)
+        ckpt = torch.load(ckpt_path, map_location=torch.device(self.device), weights_only=True)
         model_ckpt = ckpt["state_dict"]
         model_ckpt = {k.replace('model.', ''): v for k, v in model_ckpt.items()}
 
         module = BBFlowModule(self._cfg)
         module.model.load_state_dict(model_ckpt)
+        module.to(self.device)
         return module
     
     def to(self, device: str):
         self._flow_module.to(device)
         self.device = device
 
-    def _sample_states(self, trans_eq:torch.Tensor, rotmats_eq:torch.Tensor, seq:torch.Tensor, n_samples:int=10, batch_size:int=None, device:str='cuda', cuda_memory_GB:int=40):
+    def _sample_states(self, trans_eq:torch.Tensor, rotmats_eq:torch.Tensor, seq:torch.Tensor, n_samples:int=10, batch_size:int=None, device:str=None, cuda_memory_GB:int=40):
         """
         trans_equilibrium: torch.Tensor of shape (n_residues, 3)
         rotmats_equilibrium: torch.Tensor of shape (n_residues, 3, 3)
         seq: torch.Tensor of shape (n_residues, 21)
         n_samples: int
         batch_size: int or None. If not None, overrides the batch size estimation. Otherwise, the batch size is estimated based on the number of residues in the protein.
-        device: str. 'cpu' or 'cuda'.
+        device: str or None. If None, uses self.device.
         cuda_memory_GB: int. Maximum amount of memory to use on the GPU. Used for estimating the batch size if batch_size is None.
 
         Returns:
@@ -160,6 +167,9 @@ class BBFlow:
         if batch_size is None:
             batch_size = estimate_max_batchsize(n_res=num_res, memory_GB=cuda_memory_GB)
         B = batch_size
+
+        if device is None:
+            device = self.device
 
         if device != 'cpu':
             assert torch.cuda.is_available(), "CUDA is not available."
@@ -218,7 +228,7 @@ class BBFlow:
             input_path:Union[Path,str],
             num_samples:int=10,
             output_path:Union[Path,str]=None,
-            device:str='cuda',
+            device:str=None,
             cuda_memory_GB:int=40,
             batch_size:int=None,
             output_dir:Optional[Union[Path,str]]=None,
@@ -232,7 +242,7 @@ class BBFlow:
         input_path: Path or str. Path to PDB file.
         num_samples: int. Number of conformations to sample.
         output_path: Path or str. Path to output PDB file. If None, the sampled conformations are not stored.
-        device: str. 'cpu' or 'cuda'.
+        device: str. If None, uses self.device from the init call.
         cuda_memory_GB: int. Maximum amount of memory to use on the GPU. Used for estimating the batch size if batch_size is None.
         batch_size: int. Batch size for sampling. If None, the batch size is estimated based on the number of residues in the protein.
         output_dir: Path or str. Path to output directory, in which the pdb file with the sampled conformations will be stored as 'sampled_conformations.pdb' if no output_path is given.

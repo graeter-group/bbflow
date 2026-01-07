@@ -33,7 +33,7 @@ bbflow_sampler.sample(input_path='<path/to/equilibrium.pdb>', output_path='<path
 or by using the command line interface:
 
 ```bash
-bbflow_sample --input_path <path/to/equilibrium.pdb> --output_path <path/to/output_ensemble.pdb> --num_samples 50
+bbflow_sample --input_path <path/to/equilibrium.pdb> --output_path <path/to/output_ensemble.pdb> --num_samples 50 --device cuda
 ```
 
 For more details, see the example scripts at `scripts/inference_example.py` and `scripts/inference_example.sh`.

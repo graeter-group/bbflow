@@ -203,13 +203,11 @@ In general, the analysis script expects `md_dirs` to contain directories `<name>
 ## Citation
 
 ```
-@article{wolf2025conformational,
-      title={Learning conformational ensembles of proteins based on backbone geometry}, 
-      author={Nicolas Wolf and Leif Seute and Vsevolod Viliuga and Simon Wagner and Jan Stühmer and Frauke Gräter},
-      year={2025},
-      eprint={2503.05738},
-      archivePrefix={arXiv},
-      journal={arXiv preprint arXiv:2503.05738},
+@inproceedings{wolf2025conformational,
+      title={Learning conformational ensembles of proteins based on backbone geometry},
+      author={Wolf, Nicolas and Seute, Leif and Viliuga, Vsevolod and Wagner, Simon and St{\"u}hmer, Jan and Gr{\"a}ter, Frauke},
+      booktitle={39th Conference on Neural Information Processing Systems},
+      year={2025}
 }
 ```
 

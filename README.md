@@ -36,7 +36,23 @@ or by using the command line interface:
 bbflow_sample --input_path <path/to/equilibrium.pdb> --output_path <path/to/output_ensemble.pdb> --num_samples 50 --device cuda
 ```
 
-For more details, see the example scripts at `scripts/inference_example.py` and `scripts/inference_example.sh`.
+### Keeping parts of the structure fixed
+
+You can keep specific residues fixed during sampling using the `keep_fixed` parameter (inspired by [EVA](https://openreview.net/forum?id=KHkBpvmYVI)):
+
+```python
+bbflow_sampler.sample(
+    input_path='<path/to/equilibrium.pdb>', 
+    output_path='<path/to/output_ensemble.pdb>', 
+    num_samples=50,
+    keep_fixed="~18-26,32-47",  # Keep residues 18-26 and 32-47 flexible, fix all others
+    fixed_residue_scaling=0.0   # 0: strictly fixed, >0: softer constraint
+)
+```
+
+The `keep_fixed` parameter accepts a boolean mask or string format (e.g., `'5-14,20'` or `'~18-26'` to negate). Use `fixed_residue_scaling=0` for strict constraints or `>0` for softer constraints.
+
+For more details, see the example script at `scripts/inference_example.py`.
 
 ## Google Colab Tutorial
 

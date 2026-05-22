@@ -30,3 +30,20 @@ bbflow_sample --input_dir "${TEST_PDB_DIR}/example_inputs" \
     --cuda_memory_GB 5 \
     --num_samples 100 \
     --tag bbflow-mini-0.1 # small test model, use --tag latest for more accurate ensembles
+
+
+# EXAMPLE 3
+# Sample with fixed residues: keep all residues fixed except for residues 18-26 and 32-47
+# (equivalent to keeping 1-17, 27-31, 48-end fixed).
+# --keep_fixed accepts the same string format as the Python API:
+#   '5-14,20,25-30;13-18'  =>  ';' separates chains, ',' separates parts within a chain
+#   Prefix a chain block with '~' to negate (keep those residues flexible instead).
+#   Indices are 1-based and relative to each chain.
+# --fixed_residue_scaling 0.0 enforces the constraint exactly (larger values allow softer constraints).
+bbflow_sample --input_path "${TEST_PDB_DIR}/equilibrium.pdb" \
+    --output_path "${TEST_PDB_DIR}/equilibrium_fixed_samples.pdb" \
+    --cuda_memory_GB 5 \
+    --num_samples 50 \
+    --tag bbflow-mini-0.1 \
+    --keep_fixed "~18-26,32-47" \
+    --fixed_residue_scaling 0.0

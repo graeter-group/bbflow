@@ -189,7 +189,24 @@ class InterpolantBBFlow(Interpolant):
         
         else:
             raise ValueError(f'Unknown prior type {prior_type}')
-    
+
+    def _trans_euler_step(self, d_t, t, pred_trans_1, trans_t, trans_1_true, beta_t):
+        trans_cond = (1-beta_t) * pred_trans_1 + beta_t * trans_1_true
+        trans_vf = (trans_cond - trans_t) / (1 - t)
+        return trans_t + trans_vf * d_t
+
+    def _rots_euler_step(self, d_t, t, pred_rotmats_1, rotmats_t, rotmats_1_true, beta_t):
+        if self._rots_cfg.sample_schedule == 'linear':
+            scaling = 1 / (1 - t)
+        elif self._rots_cfg.sample_schedule == 'exp':
+            scaling = self._rots_cfg.exp_rate
+        else:
+            raise ValueError(
+                f'Unknown sample schedule {self._rots_cfg.sample_schedule}')
+
+        rotmats_cond = so3_utils.geodesic_t(beta_t, rotmats_1_true, pred_rotmats_1)
+        return so3_utils.geodesic_t(scaling * d_t, rotmats_cond, rotmats_t)
+
 
     def sample(
             self,
@@ -199,7 +216,11 @@ class InterpolantBBFlow(Interpolant):
             trans_equilibrium,
             rotmats_equilibrium,
             seq,
+            gt_vf_mask=None,
+            gt_vf_scaling=None
         ):
+        if gt_vf_mask is None:
+            gt_vf_mask = torch.zeros(num_batch, num_res, device=self._device)
 
         res_mask = torch.ones(num_batch, num_res, device=self._device)
 
@@ -250,12 +271,22 @@ class InterpolantBBFlow(Interpolant):
             if self._cfg.self_condition:
                 batch['trans_sc'] = pred_trans_1
 
+            if torch.any(gt_vf_mask):
+                gamma = gt_vf_scaling if gt_vf_scaling is not None else 0.0
+                beta_t = (1 - gamma * t_1) * torch.ones(num_batch, num_res, 1, device=self._device)
+                beta_t = beta_t * gt_vf_mask.to(torch.float32)[...,None]
+
+            else:
+                beta_t = torch.zeros(num_batch, num_res, 1, device=self._device)
+
             d_t = t_2 - t_1
             # Take reverse step
             trans_t_2 = self._trans_euler_step(
-                d_t, t_1, pred_trans_1, trans_t_1)
+                d_t, t_1, pred_trans_1, trans_t_1, trans_1_true=trans_equilibrium, beta_t=beta_t
+            )
             rotmats_t_2 = self._rots_euler_step(
-                d_t, t_1, pred_rotmats_1, rotmats_t_1)
+                d_t, t_1, pred_rotmats_1, rotmats_t_1, rotmats_1_true=rotmats_equilibrium, beta_t=beta_t
+            )
 
             prot_traj.append((trans_t_2, rotmats_t_2))
             t_1 = t_2

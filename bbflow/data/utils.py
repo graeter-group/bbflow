@@ -59,6 +59,7 @@ def frames_from_pdb(pdb_path:Path)->Tuple[torch.Tensor, torch.Tensor, torch.Tens
     """
 
     eq = mdtraj.load(pdb_path)
+    eq = eq.atom_slice(eq.top.select('protein'))
 
     N_atoms = eq.xyz[0, eq.top.select('name N'), :] * 10
     CA_atoms = eq.xyz[0, eq.top.select('name CA'), :] * 10

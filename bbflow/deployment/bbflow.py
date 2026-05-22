@@ -150,7 +150,7 @@ class BBFlow:
         self._flow_module.to(device)
         self.device = device
 
-    def _sample_states(self, trans_eq:torch.Tensor, rotmats_eq:torch.Tensor, seq:torch.Tensor, n_samples:int=10, batch_size:int=None, device:str=None, cuda_memory_GB:int=40):
+    def _sample_states(self, trans_eq:torch.Tensor, rotmats_eq:torch.Tensor, seq:torch.Tensor, gt_vf_mask:torch.Tensor=None, fixed_residue_scaling:float=0, n_samples:int=10, batch_size:int=None, device:str=None, cuda_memory_GB:int=40):
         """
         trans_equilibrium: torch.Tensor of shape (n_residues, 3)
         rotmats_equilibrium: torch.Tensor of shape (n_residues, 3, 3)
@@ -179,6 +179,8 @@ class BBFlow:
         trans_eq = trans_eq.to(device)
         rotmats_eq = rotmats_eq.to(device)
         seq = seq.to(device)
+        if gt_vf_mask is not None:
+            gt_vf_mask = gt_vf_mask.to(device)
 
         interpolant = self._flow_module.interpolant
         batches = []
@@ -202,6 +204,8 @@ class BBFlow:
                     trans_eq.repeat(b, 1, 1),
                     rotmats_eq.repeat(b, 1, 1, 1),
                     seq.repeat(b, 1, 1),
+                    gt_vf_mask=gt_vf_mask.repeat(b, 1) if gt_vf_mask is not None else None,
+                    gt_vf_scaling=fixed_residue_scaling
                 )
                 atom37_traj = du.to_numpy(torch.stack(atom37_traj, dim=1))
 
@@ -221,7 +225,59 @@ class BBFlow:
         
         return sampled_conformations
 
+    def _parse_keep_fixed(self, keep_fixed_str:str, chain_ids:torch.Tensor):
+        """
+        Parses the keep_fixed_str and returns a boolean mask of shape (num_residues,) 
+        where True indicates that the residue should be kept fixed. 
+        The keep_fixed_str is of the form '5-14,20,25-30;13-18' where ';' separates chains and ',' separates parts for each chain. 
+        Each part can be either a single index (e.g. '20') or a range (e.g. '5-14') where the indices are inclusive.
+        If a chain starts with '~', the mask for the whole chain is negated (i.e. those residues will be flexible instead of fixed).
+        The indices are 1-based and relative to each chain (e.g., residue 1 is the first residue of each chain).
+        """
+        num_chains = len(torch.unique(chain_ids))
+        if keep_fixed_str.count(';') > num_chains - 1:
+            raise ValueError(f"Too many chains specified in keep_fixed_str. Expected at most {num_chains} chains but got {keep_fixed_str.count(';') + 1}.")
+        num_res_per_chain = [(chain_ids == c).sum().item() for c in range(num_chains)]
+        gt_vf_mask = torch.zeros_like(chain_ids, dtype=torch.bool)
+        
+        # Create per-chain relative indices (0-based within each chain)
+        chain_relative_indices = torch.zeros_like(chain_ids, dtype=torch.long)
+        for c in range(num_chains):
+            chain_mask = chain_ids == c
+            chain_relative_indices[chain_mask] = torch.arange(num_res_per_chain[c])
+        
+        for c, keep_c in enumerate(keep_fixed_str.split(';')):
+            keep_c = keep_c.strip()
+            if keep_c == '':
+                continue
+            if keep_c[0] == '~':
+                negate = True
+                keep_c = keep_c[1:].strip()
+            else:
+                negate = False
+            for part in keep_c.split(','):
+                part = part.strip()
+                if '-' in part:
+                    start, end = part.split('-')
+                    if end == 'end' or end == '':
+                        end = num_res_per_chain[c]
+                    start, end = int(start), int(end)
+                    if start > end:
+                        raise ValueError(f"Invalid range in keep_fixed_str: {part}. Start must be less than or equal to end.")
+                    if start < 1 or end > num_res_per_chain[c]:
+                        raise ValueError(f"Invalid range in keep_fixed_str: {part}. Start and end must be between 1 and {num_res_per_chain[c]} for chain {c}.")
+                    gt_vf_mask[(chain_ids == c) & (chain_relative_indices >= start-1) & (chain_relative_indices <= end-1)] = True
+                else:
+                    idx = int(part)
+                    if idx < 1 or idx > num_res_per_chain[c]:
+                        raise ValueError(f"Invalid index in keep_fixed_str: {part}. Index must be between 1 and {num_res_per_chain[c]} for chain {c}.")
+                    gt_vf_mask[(chain_ids == c) & (chain_relative_indices == idx-1)] = True
 
+            if negate:
+                gt_vf_mask[chain_ids == c] = ~gt_vf_mask[chain_ids == c]
+
+        return gt_vf_mask
+            
 
     def sample(
             self,
@@ -233,7 +289,9 @@ class BBFlow:
             batch_size:int=None,
             output_dir:Optional[Union[Path,str]]=None,
             output_fmt:str='pdb',
-            overwrite:bool=True
+            overwrite:bool=True,
+            keep_fixed:Optional[Union[np.array, torch.Tensor, str]]=None,
+            fixed_residue_scaling:Optional[float]=None,
         ):
         """
         Loads a PDB file describing the equilibrium structure of a protein and samples num_samples conformations. Stores the sampled backbone conformations in a PDB file and returns them as array of shape (num_samples, n_residues, 37, 3).
@@ -248,6 +306,8 @@ class BBFlow:
         output_dir: Path or str. Path to output directory, in which the pdb file with the sampled conformations will be stored as 'sampled_conformations.pdb' if no output_path is given.
         output_fmt: str. 'pdb' or 'xtc'. Format of the output file if output_dir is given.
         overwrite: bool. If True, overwrites the output file if it already exists.
+        keep_fixed: np.array, torch.Tensor, or str. If given, specifies which residues should be kept fixed during sampling. Can be either a boolean mask of shape (num_residues,) or a string.
+        fixed_residue_scaling: Optional[float]. If given, scales the strength of keeping the residues specified in keep_fixed fixed. 
         """
 
         # some checks:
@@ -280,11 +340,27 @@ class BBFlow:
         # Load trans/rotmats from PDB
         trans_eq, rotmats_eq, seq, chain_ids = frames_from_pdb(input_path)
 
+        if keep_fixed is not None:
+            if isinstance(keep_fixed, np.ndarray):
+                assert keep_fixed.shape == (seq.shape[0],), f"Boolean mask keep_fixed must have shape (num_residues,) but got {keep_fixed.shape}."
+                gt_vf_mask = torch.from_numpy(keep_fixed.astype(bool))
+            elif isinstance(keep_fixed, torch.Tensor):
+                assert keep_fixed.shape == (seq.shape[0],), f"Boolean mask keep_fixed must have shape (num_residues,) but got {keep_fixed.shape}."
+                gt_vf_mask = keep_fixed.bool()
+            elif isinstance(keep_fixed, str):
+                gt_vf_mask = self._parse_keep_fixed(keep_fixed, torch.tensor(chain_ids))
+            else:
+                raise ValueError(f"keep_fixed must be either a boolean mask of shape (num_residues,) or a string of the form '5-14,20,25-30;13-18' but got {keep_fixed} of type {type(keep_fixed)}.")
+        else:
+            gt_vf_mask = None
+
         # Sample states
         sampled_conformations = self._sample_states(
             trans_eq=trans_eq,
             rotmats_eq=rotmats_eq,
             seq=seq,
+            gt_vf_mask=gt_vf_mask,
+            fixed_residue_scaling=fixed_residue_scaling,
             n_samples=num_samples,
             batch_size=batch_size,
             device=device,
@@ -297,10 +373,39 @@ class BBFlow:
 
             logging.info(f"Writing sampled conformations to {output_path}")
 
-            au.write_prot_to_pdb(
-                sampled_conformations,
-                str(output_path),
-                aatype=seq.argmax(-1).numpy(),
-                no_indexing=True,
-                chain_index=chain_ids
-            )
+            if gt_vf_mask is None or not gt_vf_mask.any():
+                au.write_prot_to_pdb(
+                    sampled_conformations,
+                    str(output_path),
+                    aatype=seq.argmax(-1).numpy(),
+                    no_indexing=True,
+                    chain_index=chain_ids
+                )
+
+            else:
+
+                mask_37 = (~gt_vf_mask).unsqueeze(-1).repeat(1, 37)  # repeat for all atoms
+                mask_37 = du.to_numpy(mask_37).astype(np.float32)  # convert to numpy array
+                au.write_prot_to_pdb(
+                    sampled_conformations,
+                    str(output_path),
+                    aatype=seq.argmax(-1).numpy(),
+                    no_indexing=True,
+                    chain_index=chain_ids,
+                    b_factors=mask_37
+                )
+
+                # load with mdtraj and superpose to the input structure
+                # only use fixed atoms for the superposition
+                import mdtraj as md
+                input_traj:md.Trajectory = md.load(input_path)
+                input_traj = input_traj.atom_slice(input_traj.top.select('name N CA C O'))
+                sampled_traj:md.Trajectory = md.load(str(output_path))
+                sampled_traj = sampled_traj.atom_slice(sampled_traj.top.select('name N CA C O'))
+                mask = [a.index for a in sampled_traj.top.atoms if gt_vf_mask[a.residue.index]]
+                sampled_traj.superpose(input_traj, atom_indices=mask, ref_atom_indices=mask)
+                output_path_superposed = str(output_path).replace('.pdb', '_superposed.pdb')
+                bfactors = (~gt_vf_mask).unsqueeze(-1).repeat(1, 4).flatten().numpy().astype(np.float32)  # repeat for N, CA, C, O
+                sampled_traj.save_pdb(output_path_superposed, bfactors=bfactors)
+
+                    

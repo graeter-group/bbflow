@@ -129,6 +129,30 @@ def _sample():
         default=None,
         help="Gamma parameter for the rotational part. If not given, the parameter will be chosen in accordance to the training config. Default is None."
     )
+    arg_parser.add_argument(
+        "--keep_fixed",
+        type=str,
+        required=False,
+        default=None,
+        help=(
+            "Residues to keep fixed during sampling. "
+            "Format: '5-14,20,25-30;13-18' where ';' separates chains and ',' separates parts within a chain. "
+            "Each part is either a single 1-based index (e.g. '20') or an inclusive range (e.g. '5-14'). "
+            "Prefix a chain block with '~' to negate it (i.e. keep those residues flexible instead of fixed). "
+            "Example: '~18-26,32-47' keeps all residues fixed except 18-26 and 32-47. Default is None (no residues fixed)."
+        )
+    )
+    arg_parser.add_argument(
+        "--fixed_residue_scaling",
+        type=float,
+        required=False,
+        default=None,
+        help=(
+            "Strength of the fixed-residue constraint (only used when --keep_fixed is set). "
+            "0.0 keeps the fixed residues exactly at the input structure; "
+            "larger values allow progressively more deviation. Default is None (uses 0.0)."
+        )
+    )
 
     args = arg_parser.parse_args()
 
@@ -162,6 +186,8 @@ def _sample():
         "batch_size": args.batch_size,
         "cuda_memory_GB": args.cuda_memory_GB,
         "overwrite": not args.no_overwrite,
+        "keep_fixed": args.keep_fixed,
+        "fixed_residue_scaling": args.fixed_residue_scaling,
     }
 
     if not args.hide_progbar:
